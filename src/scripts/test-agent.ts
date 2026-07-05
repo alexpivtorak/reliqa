@@ -54,7 +54,7 @@ async function main() {
 
                     // Execute blindly (fast)
                     console.log(`⚡ Executing cached: ${action.type} ${action.selector || action.text || ''}`);
-                    await browser.executeAction(action);
+                    await browser.executeActions(action);
 
                     // Small wait to ensure stability
                     await browser.page?.waitForTimeout(500);
@@ -83,12 +83,13 @@ async function main() {
             const screenshot = await browser.getScreenshot();
             console.log('Thinking...');
 
-            let action: Action;
+            let decision;
             if (mode === 'chaos') {
-                action = await brain.decideChaosAction(screenshot, history);
+                decision = await brain.decideChaosAction(screenshot, history);
             } else {
-                action = await brain.decideAction(screenshot, goal, history);
+                decision = await brain.decideAction(screenshot, goal, history);
             }
+            const action = decision.actions[0];
 
             console.log('Action:', action);
             history.push(`Step ${step + 1}: Action=${action.type} Reason=${action.reason || ''}`);
@@ -109,7 +110,7 @@ async function main() {
                 break;
             }
 
-            await browser.executeAction(action);
+            await browser.executeActions(action);
             step++;
 
             // Wait for stability

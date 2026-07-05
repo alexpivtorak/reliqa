@@ -150,8 +150,41 @@ export class BrowserController {
     async clickAtCoordinate(x: number, y: number): Promise<void> {
         if (!this.page) throw new Error('Session not started');
 
-        console.log(`Clicking to coordinates (${x}, ${y})`);
-        await this.page.mouse.click(x, y);
+        // Check if coordinates are within current viewport
+        const { innerWidth, innerHeight } = await this.page.evaluate(() => ({
+            innerWidth: window.innerWidth,
+            innerHeight: window.innerHeight
+        }));
+
+        let adjustedX = x;
+        let adjustedY = y;
+
+        if (x < 0 || x > innerWidth || y < 0 || y > innerHeight) {
+            console.log(`Coordinates (${x}, ${y}) are outside viewport (${innerWidth}x${innerHeight}). Auto-scrolling...`);
+            
+            const scrollX = x < 0 || x > innerWidth ? x - Math.round(innerWidth / 2) : 0;
+            const scrollY = y < 0 || y > innerHeight ? y - Math.round(innerHeight / 2) : 0;
+
+            const scrollResult = await this.page.evaluate(
+                ({ dx, dy }) => {
+                    const beforeX = window.scrollX;
+                    const beforeY = window.scrollY;
+                    window.scrollBy(dx, dy);
+                    return {
+                        actualDx: window.scrollX - beforeX,
+                        actualDy: window.scrollY - beforeY
+                    };
+                },
+                { dx: scrollX, dy: scrollY }
+            );
+
+            adjustedX -= scrollResult.actualDx;
+            adjustedY -= scrollResult.actualDy;
+            await this.page.waitForTimeout(300); // Wait for scroll to settle
+        }
+
+        console.log(`Clicking to coordinates (${adjustedX}, ${adjustedY}) (original: ${x}, ${y})`);
+        await this.page.mouse.click(adjustedX, adjustedY);
     }
 
     /**
@@ -200,6 +233,14 @@ export class BrowserController {
         if (!this.page) throw new Error('Session not started');
 
         try {
+            // Stabilize page before taking snapshot/context
+            await Promise.all([
+                this.page.waitForLoadState('load', { timeout: 3000 }).catch(() => {}),
+                this.page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {}),
+                this.page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {})
+            ]);
+            await this.page.waitForTimeout(300); // Wait for layouts/animations to settle
+
             // WE MUST PASS A STRING TO EVALUATE TO AVOID TRANSPILER INJECTION (ReferenceError: __name)
             // This function is serialized by Playwright, but tsx/esbuild might still inject things if passed as a closure.
             // Using a string body is the safest way.
@@ -258,7 +299,16 @@ export class BrowserController {
                         const centerY = Math.round(rect.y + rect.height / 2);
 
                         // Skip elements off-screen (optimization)
-                        if (centerY < 0 || centerY > window.innerHeight) continue;
+                        if (centerX < 0 || centerX > window.innerWidth || centerY < 0 || centerY > window.innerHeight) continue;
+
+                        // Occlusion check: verify if this element is covered by a modal/overlay
+                        const topEl = document.elementFromPoint(centerX, centerY);
+                        if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
+                            const topStyle = window.getComputedStyle(topEl);
+                            if (topStyle.pointerEvents !== 'none') {
+                                continue; // Skip obstructed elements (e.g., hidden under a popup/overlay)
+                            }
+                        }
 
                         const item = {
                             t: el.tagName.toLowerCase(), // tag
@@ -767,26 +817,27 @@ export class BrowserController {
                 case 'click':
                     let clickSucceeded = false;
 
-                    if (action.coordinate) {
-                        try {
-                            // Use smart coordinate click with auto-scroll
-                            await this.clickAtCoordinate(action.coordinate.x, action.coordinate.y);
-                            clickSucceeded = true;
-                        } catch (e) {
-                            console.warn("Coordinate click failed, trying selector if available");
-                            if (action.selector) {
-                                try {
-                                    await this.clickWithRetry(action.selector);
-                                    clickSucceeded = true;
-                                } catch { }
-                            }
-                        }
-                    } else if (action.selector) {
+                    if (action.selector) {
                         try {
                             await this.clickWithRetry(action.selector);
                             clickSucceeded = true;
                         } catch (e) {
-                            console.warn(`Click on selector failed: ${e}`);
+                            console.warn(`Click on selector failed: ${e}, trying coordinate fallback if available`);
+                            if (action.coordinate) {
+                                try {
+                                    await this.clickAtCoordinate(action.coordinate.x, action.coordinate.y);
+                                    clickSucceeded = true;
+                                } catch (coordErr) {
+                                    console.warn(`Coordinate click fallback failed: ${coordErr}`);
+                                }
+                            }
+                        }
+                    } else if (action.coordinate) {
+                        try {
+                            await this.clickAtCoordinate(action.coordinate.x, action.coordinate.y);
+                            clickSucceeded = true;
+                        } catch (e) {
+                            console.warn(`Click on coordinate failed: ${e}`);
                         }
                     }
 
@@ -811,24 +862,57 @@ export class BrowserController {
                     break;
 
                 case 'hover':
+                    let hoverSucceeded = false;
                     if (action.selector) {
-                        await this.hoverElement(action.selector);
-                    } else if (action.coordinate) {
-                        await this.page?.mouse.move(action.coordinate.x, action.coordinate.y);
-                        await this.page?.waitForTimeout(300);
+                        try {
+                            hoverSucceeded = await this.hoverElement(action.selector);
+                        } catch (e) {
+                            console.warn(`Hover on selector failed: ${e}, trying coordinate fallback if available`);
+                        }
+                    }
+                    if (!hoverSucceeded && action.coordinate) {
+                        try {
+                            await this.page?.mouse.move(action.coordinate.x, action.coordinate.y);
+                            await this.page?.waitForTimeout(300);
+                            hoverSucceeded = true;
+                        } catch (e) {
+                            console.warn(`Hover on coordinate failed: ${e}`);
+                        }
                     }
                     break;
 
                 case 'type':
-                    if (action.coordinate && action.text) {
-                        await this.clickAtCoordinate(action.coordinate.x, action.coordinate.y);
-                        await this.page?.waitForTimeout(500); // Wait for focus
-                        await this.page?.keyboard.type(action.text);
-                    } else if (action.selector && action.text) {
-                        await this.fillWithRetry(action.selector, action.text);
+                    let typeSucceeded = false;
+                    if (action.selector && action.text) {
+                        try {
+                            await this.fillWithRetry(action.selector, action.text);
+                            typeSucceeded = true;
+                        } catch (e) {
+                            console.warn(`Type on selector failed: ${e}, trying coordinate fallback if available`);
+                            if (action.coordinate) {
+                                try {
+                                    await this.clickAtCoordinate(action.coordinate.x, action.coordinate.y);
+                                    await this.page?.waitForTimeout(500); // Wait for focus
+                                    await this.page?.keyboard.type(action.text);
+                                    typeSucceeded = true;
+                                } catch (coordErr) {
+                                    console.warn(`Coordinate type fallback failed: ${coordErr}`);
+                                }
+                            }
+                        }
+                    } else if (action.coordinate && action.text) {
+                        try {
+                            await this.clickAtCoordinate(action.coordinate.x, action.coordinate.y);
+                            await this.page?.waitForTimeout(500); // Wait for focus
+                            await this.page?.keyboard.type(action.text);
+                            typeSucceeded = true;
+                        } catch (e) {
+                            console.warn(`Type on coordinate failed: ${e}`);
+                        }
                     } else if (action.text) {
                         console.warn('Typing without selector or coordinate');
                         await this.page?.keyboard.type(action.text);
+                        typeSucceeded = true;
                     }
 
                     // FIX: Trigger blur to ensure change events fire immediately

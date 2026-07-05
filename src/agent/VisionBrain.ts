@@ -40,11 +40,11 @@ export class VisionBrain {
       ${pageContext}
       
       SELECTOR PRIORITY:
-      1. Coordinate: { "coordinate": { "x": 123, "y": 456 } } (Highly reliable, use 'c' values from context)
-      2. data-test/id: [data-test='value']
-      3. Text/Label: Use text content if unique.
+      1. data-test/id/name: [data-test='value'], #id, [name='value'] (Highly reliable, use whenever available)
+      2. Text/Label/ARIA: button:has-text('Login'), [aria-label='Search']
+      3. Coordinate: { "coordinate": { "x": 123, "y": 456 } } (Use 'c' values from context ONLY as a fallback if no good CSS selector is available, e.g., in Shadow DOM or custom canvases)
       
-      IMPORTANT: If an element has coordinates 'c', PREFER using "coordinate": { "x": ..., "y": ... } over selectors.
+      IMPORTANT: Always prefer providing a robust CSS selector over coordinates. Coordinates should be used as a fallback because selectors are more resilient to layout shifts and page resizing.
       ` : '';
 
         // Add DOM diff info if available

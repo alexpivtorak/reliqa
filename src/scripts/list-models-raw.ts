@@ -10,7 +10,7 @@ if (!key) {
 
 async function listModels() {
     const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
-    console.log(`Fetching models from ${url.replace(key, '***')}...`);
+    console.log(`Fetching models from ${url.replace(key!, '***')}...`);
 
     try {
         const res = await fetch(url);

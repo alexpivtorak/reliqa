@@ -139,7 +139,7 @@ app.post('/api/jobs', async (c) => {
         model: model || 'gemini-2.0-flash' // Default if not provided
     }).returning();
 
-    const queue = new Queue('test-queue', { connection: redis });
+    const queue = new Queue('test-queue', { connection: redis as any });
 
     // Push to Queue
     await queue.add('test-job', {
