@@ -36,6 +36,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-reliqa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-reliqa_db}
       REDIS_URL: redis://redis:6379
       BETTER_AUTH_URL: https://reliqa.io
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     volumes:
       - artifacts:/app/artifacts
     depends_on:
@@ -43,7 +44,9 @@ services:
         condition: service_started
       redis:
         condition: service_started
-    mem_limit: 512m
+    # Crawl runs Playwright in the API process
+    shm_size: "1gb"
+    mem_limit: 1g
 
   worker:
     build:

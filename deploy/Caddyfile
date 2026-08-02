@@ -4,6 +4,12 @@
 	auto_https disable_redirects
 }
 
+# Plain HTTP for Cloudflare health / Flexible fallback
+http://reliqa.io, http://www.reliqa.io, :80 {
+	encode gzip
+	reverse_proxy web:3000
+}
+
 reliqa.io, www.reliqa.io {
 	tls internal
 	encode gzip

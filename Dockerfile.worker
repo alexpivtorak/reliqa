@@ -4,9 +4,9 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml .npmrc ./
 # Browsers come from the Playwright base image
-RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm install --frozen-lockfile --ignore-scripts --config.minimum-release-age=0
 
 COPY tsconfig.json ./
 COPY src ./src
@@ -15,4 +15,5 @@ ENV NODE_ENV=production
 # Chromium needs shared memory in Docker
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-CMD ["pnpm", "exec", "tsx", "src/worker/index.ts"]
+# Call tsx directly so pnpm does not re-check the lockfile at startup
+CMD ["./node_modules/.bin/tsx", "src/worker/index.ts"]
