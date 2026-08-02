@@ -1,7 +1,8 @@
 import { Queue } from 'bullmq';
 import { db } from '../db/index.js';
-import { testRuns, users } from '../db/schema.js';
+import { testRuns } from '../db/schema.js';
 import { TestFlow } from '../agent/types.js';
+import { ensureLocalDevUser } from './ensure-local-user.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -14,20 +15,6 @@ const connection = {
 };
 
 const testQueue = new Queue('test-queue', { connection });
-
-// TODO: Refactor to use API
-// For now, we still push to queue directly, BUT we need the Server to be running to receive events if we want SSE.
-// CAUTION: The 'eventBus' is in-memory. If Worker and Server are separate processes (they are), 
-// the Server won't receive 'eventBus.emit' from the Worker.
-//
-// WE NEED REDIS PUB/SUB for inter-process communication.
-//
-// Refactoring plan:
-// 1. Worker publishes events to Redis 'reliqa-events' channel.
-// 2. Server subscribes to Redis 'reliqa-events' channel.
-// 3. Server forwards events to SSE clients.
-
-
 
 async function main() {
     const flowId = process.argv[2];
@@ -56,10 +43,7 @@ async function main() {
 
     console.log(`Triggering Flow: ${flow.name} on ${selectedTest.url} [${mode}]`);
 
-    let user = await db.query.users.findFirst();
-    if (!user) {
-        user = (await db.insert(users).values({ email: 'flow@test.com', apiKey: 'flow-key' }).returning())[0];
-    }
+    const user = await ensureLocalDevUser();
 
     const [testRun] = await db.insert(testRuns).values({
         userId: user.id,
@@ -72,10 +56,10 @@ async function main() {
         url: selectedTest.url,
         flow: flow,
         testRunId: testRun.id,
+        userId: user.id,
         mode: mode
     });
 
-    // Notify Dashboard via Redis
     const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
     await redis.publish('reliqa-events', JSON.stringify({
         type: 'run-created',

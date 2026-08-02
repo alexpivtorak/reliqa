@@ -25,12 +25,12 @@ const connection = {
 
 const worker = new Worker('test-queue', async (job: Job) => {
     // Support both single goal and multi-step flow
-    const { url, goal, flow, testRunId, mode, chaosProfile, model, headless, disableCache } = job.data;
+    const { url, goal, flow, testRunId, userId, mode, chaosProfile, model, headless, disableCache } = job.data;
     // flow: TestFlow | undefined
 
     const testName = flow ? flow.name : goal;
     const history = new HistoryManager();
-    console.log(`Processing job ${job.id}: ${testName} [${mode || 'standard'}] on ${url} using ${model || 'default'}`);
+    console.log(`Processing job ${job.id}: ${testName} [${mode || 'standard'}] on ${url} using ${model || 'default'} (userId=${userId ?? 'unknown'})`);
 
     await db.update(testRuns).set({ status: 'running' }).where(eq(testRuns.id, testRunId));
 
@@ -139,6 +139,15 @@ const worker = new Worker('test-queue', async (job: Job) => {
             if (mode !== 'chaos' && !disableCache && cachedActions && cachedActions.length > 0) {
                 console.log(`⚡ Attempting ${cachedActions.length} cached actions for step "${currentStep.name}"`);
                 try {
+                    const cacheStartMsg = `⚡ CACHE START: Fast-forwarding ${cachedActions.length} cached actions for step "${currentStep.name}".`;
+                    history.log(cacheStartMsg);
+                    redis.publish('reliqa-events', JSON.stringify({
+                        runId: testRunId,
+                        type: 'log',
+                        message: cacheStartMsg,
+                        timestamp: new Date()
+                    }));
+
                     // Take a screenshot per step or every few actions to keep the live feed alive
                     const screenshot = await browser.getScreenshot();
                     redis.publish('reliqa-events', JSON.stringify({
@@ -173,6 +182,19 @@ const worker = new Worker('test-queue', async (job: Job) => {
 
                         // Small wait to ensure stability
                         await browser.page?.waitForTimeout(500);
+
+                        // Keep the live feed moving during fast forward
+                        try {
+                            const replayFrame = await browser.getScreenshot();
+                            redis.publish('reliqa-events', JSON.stringify({
+                                runId: testRunId,
+                                type: 'frame',
+                                data: replayFrame.toString('base64'),
+                                timestamp: new Date()
+                            }));
+                        } catch (frameError) {
+                            console.warn(`Could not capture replay frame: ${frameError}`);
+                        }
                     }
                     console.log(`✅ Cached execution successful for step "${currentStep.name}"`);
                     history.log(`[CACHE] Successfully executed ${cachedActions.length} actions.`);
@@ -190,7 +212,14 @@ const worker = new Worker('test-queue', async (job: Job) => {
                     continue; // Skip to next step
                 } catch (e) {
                     console.warn(`❌ Cached execution failed: ${e}. Falling back to Vision.`);
+                    const cacheFallbackMsg = `⚠️ CACHE FALLBACK: Replay failed, switching to live vision. (${e})`;
                     history.log(`[CACHE] Failed: ${e}. Recovering with Vision.`);
+                    redis.publish('reliqa-events', JSON.stringify({
+                        runId: testRunId,
+                        type: 'log',
+                        message: cacheFallbackMsg,
+                        timestamp: new Date()
+                    }));
                     // Fallthrough to standard Vision loop
                 }
             }

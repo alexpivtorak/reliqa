@@ -1,0 +1,18 @@
+FROM mcr.microsoft.com/playwright:v1.62.1-jammy
+
+WORKDIR /app
+
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml ./
+# Browsers come from the Playwright base image
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+COPY tsconfig.json ./
+COPY src ./src
+
+ENV NODE_ENV=production
+# Chromium needs shared memory in Docker
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+CMD ["pnpm", "exec", "tsx", "src/worker/index.ts"]

@@ -1,6 +1,7 @@
 import { Queue } from 'bullmq';
 import { db } from '../db/index.js';
-import { testRuns, users } from '../db/schema.js';
+import { testRuns } from '../db/schema.js';
+import { ensureLocalDevUser } from './ensure-local-user.js';
 import dotenv from 'dotenv';
 import { Redis } from 'ioredis';
 
@@ -24,17 +25,8 @@ async function main() {
 
     console.log(`Triggering Job: ${goal} on ${url} [${mode}]`);
 
-    // Ensure a default user exists
-    let user = await db.query.users.findFirst();
-    if (!user) {
-        const [newUser] = await db.insert(users).values({
-            email: 'demo@reliqa.com',
-            apiKey: 'demo-key'
-        }).returning();
-        user = newUser;
-    }
+    const user = await ensureLocalDevUser();
 
-    // Create Test Run record
     const [testRun] = await db.insert(testRuns).values({
         userId: user.id,
         url: url,
@@ -42,15 +34,14 @@ async function main() {
         status: 'queued'
     }).returning();
 
-    // Push to Queue
     await testQueue.add('test-job', {
         url,
         goal,
         testRunId: testRun.id,
+        userId: user.id,
         mode
     });
 
-    // Notify Dashboard via Redis
     const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
     await redis.publish('reliqa-events', JSON.stringify({
         type: 'run-created',

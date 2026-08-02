@@ -1,0 +1,92 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    environment:
+      RELIQA_API_URL: http://api:3001
+      NODE_ENV: production
+    depends_on:
+      - api
+    mem_limit: 512m
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-reliqa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-reliqa_db}
+      REDIS_URL: redis://redis:6379
+      BETTER_AUTH_URL: https://reliqa.io
+    volumes:
+      - artifacts:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+    mem_limit: 512m
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-reliqa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-reliqa_db}
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - artifacts:/app/artifacts
+      - cache_data:/app/cache
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+    shm_size: "1gb"
+    mem_limit: 2g
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-reliqa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-reliqa_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 512m
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    mem_limit: 128m
+
+volumes:
+  postgres_data:
+  artifacts:
+  cache_data:
+  caddy_data:
+  caddy_config:

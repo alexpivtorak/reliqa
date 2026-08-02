@@ -11,8 +11,10 @@ import { desc, eq, lt } from 'drizzle-orm';
 import { EventEmitter } from 'events';
 import { Redis } from 'ioredis';
 import { Queue } from 'bullmq';
+import { auth } from '../auth/index.js';
+import { sessionMiddleware, requireAuth, type AuthVariables } from './auth-middleware.js';
 
-const app = new Hono();
+const app = new Hono<{ Variables: AuthVariables }>();
 
 // Global Event Emitter for broadcasting to SSE clients
 export const eventBus = new EventEmitter();
@@ -45,14 +47,31 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import path from 'path';
 import fs from 'fs';
 
-app.use('/*', cors());
+const webOrigin = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
+
+app.use(
+    '/*',
+    cors({
+        origin: webOrigin,
+        allowHeaders: ['Content-Type', 'Authorization'],
+        allowMethods: ['GET', 'POST', 'OPTIONS'],
+        credentials: true,
+        maxAge: 600,
+    }),
+);
+
+app.on(['POST', 'GET'], '/api/auth/*', (c) => {
+    return auth.handler(c.req.raw);
+});
+
+app.use('*', sessionMiddleware);
 
 // Serve static videos
 // Note: In production this should be Nginx or S3, but for local dev this works.
 const artifactsDir = path.resolve('./artifacts/videos');
 if (!fs.existsSync(artifactsDir)) fs.mkdirSync(artifactsDir, { recursive: true });
 
-app.use('/videos/*', serveStatic({
+app.use('/videos/*', requireAuth, serveStatic({
     root: './artifacts/videos',
     rewriteRequestPath: (path) => path.replace(/^\/videos/, ''),
 }));
@@ -118,7 +137,7 @@ app.get('/', (c) => {
 });
 
 // List recent runs
-app.get('/api/runs', async (c) => {
+app.get('/api/runs', requireAuth, async (c) => {
     const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!) : 10;
     const cursor = c.req.query('cursor') ? parseInt(c.req.query('cursor')!) : undefined;
 
@@ -135,8 +154,8 @@ app.get('/api/runs', async (c) => {
 });
 
 // Get run details
-app.get('/api/runs/:id', async (c) => {
-    const id = parseInt(c.req.param('id'));
+app.get('/api/runs/:id', requireAuth, async (c) => {
+    const id = parseInt(c.req.param('id')!, 10);
     const run = await db.select().from(testRuns).where(eq(testRuns.id, id)).execute();
 
     if (run.length === 0) return c.json({ error: 'Run not found' }, 404);
@@ -147,8 +166,8 @@ app.get('/api/runs/:id', async (c) => {
 });
 
 // Stop a run
-app.post('/api/runs/:id/stop', async (c) => {
-    const id = parseInt(c.req.param('id'));
+app.post('/api/runs/:id/stop', requireAuth, async (c) => {
+    const id = parseInt(c.req.param('id')!, 10);
     const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id)).execute();
 
     if (!run) return c.json({ error: 'Run not found' }, 404);
@@ -175,26 +194,28 @@ app.post('/api/runs/:id/stop', async (c) => {
 });
 
 // Create a new run (Trigger Job)
-app.post('/api/jobs', async (c) => {
+app.post('/api/jobs', requireAuth, async (c) => {
     const { url, goal, mode, chaosProfile, model, headless, disableCache } = await c.req.json();
 
     if (!url || !goal) return c.json({ error: 'Missing url or goal' }, 400);
 
-    console.log(`Triggering Job: ${goal} on ${url} [${mode}] using ${model || 'default'}`);
+    const sessionUser = c.get('user');
+    if (!sessionUser) return c.json({ error: 'Unauthorized' }, 401);
 
-    // Ensure a default user exists (temporary hack until auth)
-    let user = await db.query.users.findFirst();
-    if (!user) {
-        // ... (user creation logic commented out in original)
+    const userId = Number(sessionUser.id);
+    if (!Number.isFinite(userId)) {
+        return c.json({ error: 'Invalid session user' }, 401);
     }
+
+    console.log(`Triggering Job: ${goal} on ${url} [${mode}] using ${model || 'default'}`);
 
     // Create Test Run record
     const [testRun] = await db.insert(testRuns).values({
-        // userId: user?.id, 
+        userId,
         url: url,
         goal: goal,
         status: 'queued',
-        model: model || 'gemini-2.5-flash' // Default if not provided
+        model: model || 'gemini-2.5-flash'
     }).returning();
 
     const queue = new Queue('test-queue', { connection: redis as any });
@@ -204,10 +225,11 @@ app.post('/api/jobs', async (c) => {
         url,
         goal,
         testRunId: testRun.id,
+        userId,
         mode,
         chaosProfile,
         model: model || 'gemini-2.5-flash',
-        headless: headless !== false, // Default true
+        headless: headless !== false,
         disableCache: disableCache === true
     });
 
@@ -217,7 +239,7 @@ app.post('/api/jobs', async (c) => {
 });
 
 // Dynamic Sitemap Analyzer endpoint
-app.post('/api/analyze-sitemap', async (c) => {
+app.post('/api/analyze-sitemap', requireAuth, async (c) => {
     const { url, nodes, flowType } = await c.req.json();
 
     const activeNodes = (nodes || []).filter((n: any) => n.isActive);
@@ -300,7 +322,7 @@ Return ONLY the plain text test instructions. Keep it clean and concise. Do not 
 });
 
 // SSE Sitemap Crawler Discovery endpoint
-app.get('/api/crawl-stream', async (c) => {
+app.get('/api/crawl-stream', requireAuth, async (c) => {
     const url = c.req.query('url');
     const depthStr = c.req.query('depth');
     const depth = depthStr ? parseInt(depthStr, 10) : 3;
@@ -350,7 +372,7 @@ app.get('/api/crawl-stream', async (c) => {
 });
 
 // Global Stream for Dashboard
-app.get('/api/stream/global', async (c) => {
+app.get('/api/stream/global', requireAuth, async (c) => {
     console.log(`🔌 Client connected to GLOBAL stream`);
 
     c.header('Content-Type', 'text/event-stream; charset=utf-8');
@@ -395,8 +417,9 @@ app.get('/api/stream/global', async (c) => {
 });
 
 // SSE Endpoint for Live Streaming (Specific Run)
-app.get('/api/stream/:id', async (c) => {
-    const id = c.req.param('id');
+app.get('/api/stream/:id', requireAuth, async (c) => {
+    const id = c.req.param('id')!;
+    const runId = parseInt(id, 10);
     console.log(`🔌 Client connected to stream for run ${id}`);
 
     c.header('Content-Type', 'text/event-stream; charset=utf-8');
@@ -411,22 +434,22 @@ app.get('/api/stream/:id', async (c) => {
         });
 
         const onLog = async (data: any) => {
-            if (data.runId === parseInt(id)) {
+            if (data.runId === runId) {
                 await stream.writeSSE({ data: JSON.stringify(data), event: 'log' });
             }
         };
         const onStep = async (data: any) => {
-            if (data.runId === parseInt(id)) {
+            if (data.runId === runId) {
                 await stream.writeSSE({ data: JSON.stringify(data), event: 'step' });
             }
         };
         const onFrame = async (data: any) => {
-            if (data.runId === parseInt(id)) {
+            if (data.runId === runId) {
                 await stream.writeSSE({ data: data.data, event: 'frame' });
             }
         };
         const onStatus = async (data: any) => {
-            if (data.runId === parseInt(id)) {
+            if (data.runId === runId) {
                 await stream.writeSSE({ data: JSON.stringify(data), event: 'status' });
             }
         };

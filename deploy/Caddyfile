@@ -1,0 +1,13 @@
+{
+	# Origin certs for Cloudflare Full (not Full Strict).
+	# Set Cloudflare SSL/TLS mode to "Full".
+	auto_https disable_redirects
+}
+
+reliqa.io, www.reliqa.io {
+	tls internal
+	encode gzip
+
+	# Next.js (proxies /api and /videos to the API container)
+	reverse_proxy web:3000
+}

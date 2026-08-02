@@ -45,7 +45,16 @@ GOOGLE_API_KEY=your_gemini_api_key_here
 DATABASE_URL=postgres://reliqa:securepassword@127.0.0.1:5433/reliqa_db
 REDIS_URL=redis://127.0.0.1:6379
 GEMINI_MODEL=gemini-2.5-flash # Optional, defaults to gemini-2.5-flash
+
+# Auth (Google sign-in via Better Auth)
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+BETTER_AUTH_SECRET=generate_with_openssl_rand_base64_32
+BETTER_AUTH_URL=http://localhost:3000
+AUTH_ALLOWED_EMAILS=you@example.com
 ```
+
+For Google sign-in, create an OAuth 2.0 Client ID in [Google Cloud Console](https://console.cloud.google.com/apis/credentials). Set the authorized redirect URI to `http://localhost:3000/api/auth/callback/google`. Put your email in `AUTH_ALLOWED_EMAILS` (comma-separated) so only approved accounts can sign up.
 
 ### 2. Start Everything
 The easiest way to start the entire ecosystem (Infra, API, Worker, and Web Dashboard):

@@ -37,7 +37,7 @@ export function RunsList() {
         loadMissions();
 
         // Connect to Global Stream for real-time updates
-        const eventSource = new EventSource('http://localhost:3001/api/stream/global');
+        const eventSource = new EventSource('/api/stream/global');
 
         eventSource.addEventListener('run-created', (e: any) => {
             try {

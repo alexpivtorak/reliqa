@@ -5,10 +5,10 @@ export interface Run {
     goal: string;
     status: 'queued' | 'running' | 'completed' | 'failed' | 'stopping' | 'stopped';
     result: 'pass' | 'fail' | null;
-    videoUrl?: string; // e.g. /videos/run-123.webm
+    videoUrl?: string;
     createdAt: string;
     logs?: string;
-    model?: string; // e.g. gemini-2.5-flash
+    model?: string;
 }
 
 export interface Step {
@@ -22,20 +22,24 @@ export interface Step {
     timestamp: string;
 }
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = '/api';
+
+const fetchOptions: RequestInit = {
+    credentials: 'include',
+};
 
 export async function getRuns(limit = 10, cursor?: number): Promise<{ runs: Run[], nextCursor: number | null }> {
-    const url = new URL(`${API_BASE}/runs`);
+    const url = new URL(`${API_BASE}/runs`, typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
     url.searchParams.append('limit', limit.toString());
     if (cursor) url.searchParams.append('cursor', cursor.toString());
 
-    const res = await fetch(url.toString());
+    const res = await fetch(url.toString(), fetchOptions);
     if (!res.ok) throw new Error('Failed to fetch runs');
     return res.json();
 }
 
 export async function getRun(id: string): Promise<Run & { steps: Step[] }> {
-    const res = await fetch(`${API_BASE}/runs/${id}`);
+    const res = await fetch(`${API_BASE}/runs/${id}`, fetchOptions);
     if (!res.ok) throw new Error('Failed to fetch run');
     return res.json();
 }
@@ -46,7 +50,8 @@ export function getStreamUrl(runId: string) {
 
 export async function stopRun(id: string): Promise<{ success: boolean }> {
     const res = await fetch(`${API_BASE}/runs/${id}/stop`, {
-        method: 'POST'
+        method: 'POST',
+        ...fetchOptions,
     });
     if (!res.ok) throw new Error('Failed to stop run');
     return res.json();

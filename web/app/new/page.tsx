@@ -363,7 +363,7 @@ PHASE 3: FINISH
         setSitemapEdges([]);
 
         const encodedUrl = encodeURIComponent(crawlUrl);
-        const sseUrl = `http://localhost:3001/api/crawl-stream?url=${encodedUrl}&depth=${depth}`;
+        const sseUrl = `/api/crawl-stream?url=${encodedUrl}&depth=${depth}`;
         const eventSource = new EventSource(sseUrl);
 
         let activeNodesList: any[] = [];
@@ -488,7 +488,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
             // EventSource also fires onerror when the stream closes after complete/error.
             if (settled) return;
             finishWithFailure(
-                "Lost connection to the crawl API at localhost:3001. Is the API server running?"
+                "Lost connection to the crawl API. Is the API server running?"
             );
         };
     };
@@ -496,11 +496,12 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
     const handleGenerateGoal = async () => {
         setIsGeneratingGoal(true);
         try {
-            const response = await fetch("http://localhost:3001/api/analyze-sitemap", {
+            const response = await fetch("/api/analyze-sitemap", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
+                credentials: "include",
                 body: JSON.stringify({
                     url,
                     nodes,
@@ -559,11 +560,12 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
         setIsLoading(true);
 
         try {
-            const response = await fetch("http://localhost:3001/api/jobs", {
+            const response = await fetch("/api/jobs", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
+                credentials: "include",
                 body: JSON.stringify({
                     url,
                     goal,

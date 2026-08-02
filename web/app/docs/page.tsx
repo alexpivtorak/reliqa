@@ -106,7 +106,8 @@ export default function DocsPage() {
                             <CodeBlock>{`pnpm install`}</CodeBlock>
                             <p className="text-xs text-muted-foreground mt-2">Installs Node deps and Playwright browsers via <code className="bg-muted px-1 rounded">postinstall</code>.</p>
                             <p className="text-xs text-muted-foreground mt-2">Create a <code className="bg-muted px-1 rounded">.env</code> file in the root:</p>
-                            <CodeBlock>{`GOOGLE_API_KEY=your_gemini_api_key_here\nDATABASE_URL=postgres://reliqa:securepassword@127.0.0.1:5433/reliqa_db\nREDIS_URL=redis://127.0.0.1:6379\nGEMINI_MODEL=gemini-2.5-flash # Optional, defaults to gemini-2.5-flash`}</CodeBlock>
+                            <CodeBlock>{`GOOGLE_API_KEY=your_gemini_api_key_here\nDATABASE_URL=postgres://reliqa:securepassword@127.0.0.1:5433/reliqa_db\nREDIS_URL=redis://127.0.0.1:6379\nGEMINI_MODEL=gemini-2.5-flash # Optional, defaults to gemini-2.5-flash\n\n# Auth (Google sign-in via Better Auth)\nGOOGLE_CLIENT_ID=your_google_oauth_client_id\nGOOGLE_CLIENT_SECRET=your_google_oauth_client_secret\nBETTER_AUTH_SECRET=generate_with_openssl_rand_base64_32\nBETTER_AUTH_URL=http://localhost:3000\nAUTH_ALLOWED_EMAILS=you@example.com`}</CodeBlock>
+                            <p className="text-xs text-muted-foreground mt-2">Google OAuth redirect URI: <code className="bg-muted px-1 rounded">http://localhost:3000/api/auth/callback/google</code>. Only emails listed in <code className="bg-muted px-1 rounded">AUTH_ALLOWED_EMAILS</code> can sign up.</p>
                         </div>
 
                         {/* Step 2 */}

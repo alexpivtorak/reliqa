@@ -37,6 +37,7 @@ export default function RunPage() {
     const [logs, setLogs] = useState<{ message: string, timestamp: string, type: 'log' | 'thought' }[]>([]);
     const [status, setStatus] = useState('connecting');
     const [liveFrame, setLiveFrame] = useState<string | null>(null);
+    const [isReplayingCache, setIsReplayingCache] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [copied, setCopied] = useState(false);
 
@@ -56,9 +57,10 @@ export default function RunPage() {
         if (!run) return;
         setIsRerunLoading(true);
         try {
-            const response = await fetch("http://localhost:3001/api/jobs", {
+            const response = await fetch("/api/jobs", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify({
                     url: run.url,
                     goal: run.goal,
@@ -132,6 +134,19 @@ export default function RunPage() {
         es.addEventListener('log', (e) => {
             try {
                 const data = JSON.parse(e.data);
+                const message: string = data.message ?? '';
+
+                // The worker brackets every cache replay with these sentinels
+                if (message.includes('CACHE START')) {
+                    setIsReplayingCache(true);
+                } else if (
+                    message.includes('FAST FORWARD') ||
+                    message.includes('CACHE FALLBACK') ||
+                    message.includes('Capturing page state')
+                ) {
+                    setIsReplayingCache(false);
+                }
+
                 setLogs(prev => [...prev, {
                     message: data.message,
                     timestamp: data.timestamp || new Date().toISOString(),
@@ -156,6 +171,7 @@ export default function RunPage() {
             try {
                 const data = JSON.parse(e.data);
                 if (data.status) {
+                    setIsReplayingCache(false);
                     setRun(prev => prev ? {
                         ...prev,
                         status: data.status,
@@ -184,8 +200,6 @@ export default function RunPage() {
     }, [id]);
 
     if (!run) return <div className="p-10">Loading Mission {id}...</div>;
-
-    const SERVER_URL = 'http://localhost:3001'; // Should be env var
 
     return (
         <div className="flex flex-col p-6 h-full overflow-hidden">
@@ -280,6 +294,16 @@ export default function RunPage() {
                     <CardContent className="flex-1 px-4 pb-4 pt-0 flex flex-col gap-4 overflow-hidden">
                         {/* Video Player Area */}
                         <div className="flex-1 bg-black rounded-lg flex items-center justify-center overflow-hidden border shadow-inner relative">
+                            {isReplayingCache && run.status === 'running' && (
+                                <div
+                                    role="status"
+                                    aria-live="polite"
+                                    className="absolute top-3 left-3 z-20 flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-500/20 px-3 py-1 text-[11px] font-semibold text-amber-200 backdrop-blur"
+                                >
+                                    <Zap className="w-3 h-3 fill-current" aria-hidden="true" />
+                                    Replaying cached steps
+                                </div>
+                            )}
                             {run.status === 'running' && liveFrame ? (
                                 <img
                                     src={`data:image/jpeg;base64,${liveFrame}`}
@@ -288,7 +312,7 @@ export default function RunPage() {
                                 />
                             ) : run.videoUrl ? (
                                 <div className="w-full h-full flex items-center justify-center">
-                                    <VideoPlayer src={`${SERVER_URL}${run.videoUrl}`} />
+                                    <VideoPlayer src={run.videoUrl} />
                                 </div>
                             ) : (
                                 <div className="text-center text-muted-foreground">
@@ -335,6 +359,8 @@ export default function RunPage() {
                                 let textColor = 'text-green-300';
                                 let borderColor = 'border-zinc-700';
 
+                                const isFromCache = /cache/i.test(rawMsg) || rawMsg.includes('FAST FORWARD');
+
                                 if (rawMsg.includes('Action:') || rawMsg.includes('👉')) {
                                     emoji = '⚡'; textColor = 'text-yellow-400'; borderColor = 'border-yellow-600';
                                 } else if (rawMsg.includes('Capturing') || rawMsg.includes('📸')) {
@@ -359,9 +385,18 @@ export default function RunPage() {
                                     emoji = '❌'; textColor = 'text-red-400'; borderColor = 'border-red-600';
                                 }
 
+                                if (isFromCache) {
+                                    emoji = '⚡'; textColor = 'text-amber-300'; borderColor = 'border-amber-600';
+                                }
+
                                 return (
                                     <div key={i} className={`break-words border-l-2 ${borderColor} pl-2 py-0.5 hover:bg-zinc-900/50 transition-colors`}>
                                         <span className="text-zinc-600 text-xs">[{new Date(log.timestamp).toLocaleTimeString()}]</span>{' '}
+                                        {isFromCache && (
+                                            <span className="rounded bg-amber-500/20 border border-amber-500/40 px-1 text-[10px] font-bold text-amber-300 align-middle">
+                                                CACHE
+                                            </span>
+                                        )}{' '}
                                         <span className={textColor}>
                                             {emoji} {cleanMsg}
                                         </span>
