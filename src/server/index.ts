@@ -3,6 +3,8 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { DiscoveryCrawler } from '../agent/DiscoveryCrawler.js';
 import { db } from '../db/index.js';
 import { testRuns, testSteps } from '../db/schema.js';
 import { desc, eq, lt } from 'drizzle-orm';
@@ -158,6 +160,129 @@ app.post('/api/jobs', async (c) => {
     return c.json({ runId: testRun.id, status: 'queued' });
 });
 
+// Dynamic Sitemap Analyzer endpoint
+app.post('/api/analyze-sitemap', async (c) => {
+    const { url, nodes, flowType } = await c.req.json();
+
+    const activeNodes = (nodes || []).filter((n: any) => n.isActive);
+    if (activeNodes.length === 0) {
+        return c.json({ prompt: "GOAL: No pages selected. Please enable at least one page state." });
+    }
+
+    // Rules-based dynamic prompt generator (failsafe fallback for 429 quota limits)
+    const generateFallbackPrompt = () => {
+        let text = `GOAL: Validate the user flow on ${url}.\n\n`;
+        
+        text += "PHASE 1: NAVIGATION & ASSERTIONS\n";
+        activeNodes.forEach((node: any, idx: number) => {
+            text += `${idx + 1}. Navigate to state "${node.title}" (${node.url}).\n`;
+            if (node.customAssertion) {
+                text += `   - ASSERT: ${node.customAssertion}\n`;
+            }
+        });
+
+        text += "\nPHASE 2: INTERACTION VERIFICATION\n";
+        activeNodes.forEach((node: any) => {
+            if (node.interactives && node.interactives.length > 0) {
+                text += `- On page "${node.title}", verify the presence of interactive elements: ${node.interactives.join(', ')}.\n`;
+            }
+        });
+
+        text += "\nPHASE 3: COMPLETE\n";
+        text += `${activeNodes.length + 1}. Once all active states are verified, emit "Done".`;
+        return text;
+    };
+
+    // If flow type matches mock templates, we can merge them dynamically
+    if (flowType === 'chaos-fuzz') {
+        let text = `GOAL: Stress-test inputs using fuzzed strings on ${url}.\n\n`;
+        activeNodes.forEach((node: any, idx: number) => {
+            text += `${idx + 1}. Go to "${node.title}" (${node.url}).\n`;
+            if (node.interactives && node.interactives.length > 0) {
+                text += `   - Fuzz fields: ${node.interactives.slice(0, 2).join(', ')} with SQL Injection and emoji payloads.\n`;
+            }
+        });
+        text += `${activeNodes.length + 1}. Ensure server handles validations without throwing 500 server errors.`;
+        return c.json({ prompt: text });
+    }
+
+    const key = process.env.GOOGLE_API_KEY;
+    let geminiPrompt = "";
+
+    if (key) {
+        try {
+            const genAI = new GoogleGenerativeAI(key);
+            const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+            const model = genAI.getGenerativeModel({ model: modelName });
+
+            const aiPrompt = `
+You are an expert QA Engineer.
+Below is the sitemap of a web application discovered by our crawler on target URL: "${url}".
+
+State Nodes (Pages/Screens):
+${JSON.stringify(activeNodes, null, 2)}
+
+Please write a step-by-step test plan/prompt that can be executed by an autonomous vision QA agent to perform a happy path end-to-end checkout/validation test on these pages.
+The test plan must:
+1. Be structured as a set of logical phases.
+2. Tell the agent exactly what to click, type, and verify at each page.
+3. Be generic to this specific website and nodes.
+4. End with a rule to emit 'Done' when the final node is verified.
+
+Return ONLY the plain text test instructions. Keep it clean and concise. Do not wrap in markdown boxes.
+`;
+
+            const result = await model.generateContent([aiPrompt]);
+            geminiPrompt = result.response.text();
+        } catch (error) {
+            console.warn("Gemini sitemap analysis failed, using fallback:", error);
+        }
+    }
+
+    const prompt = geminiPrompt || generateFallbackPrompt();
+    return c.json({ prompt });
+});
+
+// SSE Sitemap Crawler Discovery endpoint
+app.get('/api/crawl-stream', async (c) => {
+    const url = c.req.query('url');
+    const depthStr = c.req.query('depth');
+    const depth = depthStr ? parseInt(depthStr, 10) : 3;
+
+    if (!url) {
+        return c.json({ error: "Missing 'url' query parameter" }, 400);
+    }
+
+    console.log(`🔌 Client connected to crawl SSE stream for: ${url} (depth: ${depth})`);
+
+    c.header('Content-Type', 'text/event-stream; charset=utf-8');
+    c.header('Cache-Control', 'no-cache');
+    c.header('Connection', 'keep-alive');
+
+    return streamSSE(c, async (stream) => {
+        const crawler = new DiscoveryCrawler();
+        try {
+            await crawler.discover(url, depth, async (event) => {
+                await stream.writeSSE({
+                    data: JSON.stringify(event.data),
+                    event: event.type
+                });
+            });
+            // Send complete signal
+            await stream.writeSSE({
+                data: JSON.stringify({ success: true }),
+                event: 'complete'
+            });
+        } catch (err: any) {
+            console.error('SSE Crawl streaming failed:', err);
+            await stream.writeSSE({
+                data: JSON.stringify({ error: err.message }),
+                event: 'error'
+            });
+        }
+    });
+});
+
 // Global Stream for Dashboard
 app.get('/api/stream/global', async (c) => {
     console.log(`🔌 Client connected to GLOBAL stream`);
@@ -189,15 +314,17 @@ app.get('/api/stream/global', async (c) => {
         eventBus.on('run-created', onRunCreated);
         eventBus.on('status', onStatus);
 
-        while (true) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            if (c.req.raw.signal.aborted) {
+        // Block until the client disconnects — no polling, purely event-driven.
+        await new Promise<void>((resolve) => {
+            const cleanup = () => {
                 console.log(`🔌 Client disconnected from GLOBAL stream`);
                 eventBus.off('run-created', onRunCreated);
                 eventBus.off('status', onStatus);
-                break;
-            }
-        }
+                resolve();
+            };
+            c.req.raw.signal.addEventListener('abort', cleanup, { once: true });
+            stream.onAbort(cleanup);
+        });
     });
 });
 
@@ -206,77 +333,57 @@ app.get('/api/stream/:id', async (c) => {
     const id = c.req.param('id');
     console.log(`🔌 Client connected to stream for run ${id}`);
 
-    // Set headers for SSE with explicit charset
     c.header('Content-Type', 'text/event-stream; charset=utf-8');
     c.header('Cache-Control', 'no-cache');
     c.header('Connection', 'keep-alive');
 
-    const response = await streamSSE(c, async (stream) => {
+    return streamSSE(c, async (stream) => {
         // Send initial connection message
         await stream.writeSSE({
             data: JSON.stringify({ type: 'connected', message: `Listening for events on run ${id}` }),
             event: 'status',
         });
 
-        // Listener function
         const onLog = async (data: any) => {
             if (data.runId === parseInt(id)) {
-                await stream.writeSSE({
-                    data: JSON.stringify(data),
-                    event: 'log',
-                });
+                await stream.writeSSE({ data: JSON.stringify(data), event: 'log' });
             }
         };
-
         const onStep = async (data: any) => {
             if (data.runId === parseInt(id)) {
-                await stream.writeSSE({
-                    data: JSON.stringify(data),
-                    event: 'step',
-                });
+                await stream.writeSSE({ data: JSON.stringify(data), event: 'step' });
             }
         };
-
         const onFrame = async (data: any) => {
             if (data.runId === parseInt(id)) {
-                await stream.writeSSE({
-                    data: data.data, // base64 string
-                    event: 'frame',
-                });
+                await stream.writeSSE({ data: data.data, event: 'frame' });
             }
         };
-
         const onStatus = async (data: any) => {
             if (data.runId === parseInt(id)) {
-                await stream.writeSSE({
-                    data: JSON.stringify(data),
-                    event: 'status',
-                });
+                await stream.writeSSE({ data: JSON.stringify(data), event: 'status' });
             }
         };
 
-        // Attach listeners
         eventBus.on('log', onLog);
         eventBus.on('step', onStep);
         eventBus.on('frame', onFrame);
         eventBus.on('status', onStatus);
 
-        // Keep connection open until client disconnects
-        while (true) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            if (c.req.raw.signal.aborted) {
+        // Block until the client disconnects — no polling, purely event-driven.
+        await new Promise<void>((resolve) => {
+            const cleanup = () => {
                 console.log(`🔌 Client disconnected from stream ${id}`);
                 eventBus.off('log', onLog);
                 eventBus.off('step', onStep);
                 eventBus.off('frame', onFrame);
                 eventBus.off('status', onStatus);
-                break;
-            }
-        }
+                resolve();
+            };
+            c.req.raw.signal.addEventListener('abort', cleanup, { once: true });
+            stream.onAbort(cleanup);
+        });
     });
-
-    response.headers.set('Content-Type', 'text/event-stream; charset=utf-8');
-    return response;
 });
 
 const port = 3001;

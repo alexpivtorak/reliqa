@@ -19,8 +19,8 @@ export class VisionBrain {
         if (!key) throw new Error('GOOGLE_API_KEY is required');
         this.genAI = new GoogleGenerativeAI(key);
 
-        // Prioritize passed model, then env var, then default to 2.0-flash
-        const selectedModel = modelName || process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+        // Prioritize passed model, then env var, then default to 2.5-flash
+        const selectedModel = modelName || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
         console.log(`🤖 VisionBrain initialized with model: ${selectedModel}`);
         this.model = this.genAI.getGenerativeModel({ model: selectedModel });
     }

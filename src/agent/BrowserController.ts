@@ -937,8 +937,8 @@ export class BrowserController {
                     break;
 
                 case 'scroll':
-                    // Scroll down by default or to specific element
-                    if (action.selector && !action.selector.includes('document.')) {
+                    const isGlobalSelector = action.selector && ['body', 'html', 'document', 'window'].includes(action.selector.toLowerCase());
+                    if (action.selector && !isGlobalSelector && !action.selector.includes('document.')) {
                         try {
                             const element = this.page?.locator(action.selector);
                             await element?.scrollIntoViewIfNeeded({ timeout: 3000 });
@@ -947,18 +947,28 @@ export class BrowserController {
                             await this.page?.evaluate(() => window.scrollBy(0, 500));
                         }
                     } else {
-                        // Scroll page - check if "bottom" intent
-                        const scrollAmount = action.reason?.toLowerCase().includes('bottom') ? 10000 : 300;
+                        // Scroll page - check direction
+                        const direction = (action.text?.toLowerCase() === 'up' || action.reason?.toLowerCase().includes('up')) ? 'up' : 'down';
+                        let scrollAmount = direction === 'up' ? -500 : 500;
+                        if (action.reason?.toLowerCase().includes('bottom')) {
+                            scrollAmount = 10000;
+                        } else if (action.reason?.toLowerCase().includes('top')) {
+                            scrollAmount = -10000;
+                        }
 
-                        // Safety check: Don't scroll if we're already at the bottom
-                        const canScroll = await this.page?.evaluate(() => {
-                            return (window.innerHeight + window.scrollY) < document.body.scrollHeight;
-                        });
+                        // Safety check: Don't scroll if we're already at the bottom/top
+                        const canScroll = await this.page?.evaluate((dir) => {
+                            if (dir === 'up') {
+                                return window.scrollY > 0;
+                            } else {
+                                return (window.innerHeight + window.scrollY) < document.body.scrollHeight - 5;
+                            }
+                        }, direction);
 
                         if (canScroll) {
                             await this.page?.evaluate((amt) => window.scrollBy(0, amt), scrollAmount);
                         } else {
-                            console.log('🚫 Cannot scroll further, reached bottom of page');
+                            console.log(`🚫 Cannot scroll further ${direction}, reached edge`);
                         }
                     }
                     await this.page?.waitForTimeout(300);
