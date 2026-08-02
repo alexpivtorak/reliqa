@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
+    "postinstall": "playwright install chromium",
     "build": "tsc",
     "start": "node dist/index.js",
     "start:server": "tsx src/server/index.ts",
@@ -40,23 +41,23 @@
   "license": "ISC",
   "dependencies": {
     "@google/generative-ai": "^0.12.0",
-    "@hono/node-server": "^1.19.9",
-    "bullmq": "^5.0.0",
-    "dotenv": "^16.4.5",
+    "@hono/node-server": "^1.19.17",
+    "bullmq": "^5.81.3",
+    "dotenv": "^16.6.1",
     "drizzle-orm": "^0.30.10",
-    "hono": "^4.11.9",
-    "ioredis": "^5.9.2",
-    "pg": "^8.11.5",
-    "playwright": "^1.50.0",
-    "winston": "^3.13.0",
-    "zod": "^3.23.8"
+    "hono": "^4.12.33",
+    "ioredis": "^5.11.1",
+    "pg": "^8.22.0",
+    "playwright": "^1.62.1",
+    "winston": "^3.19.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/node": "^20.12.7",
-    "@types/pg": "^8.11.5",
-    "concurrently": "^9.2.1",
-    "drizzle-kit": "^0.20.14",
-    "tsx": "^4.7.2",
-    "typescript": "^5.4.5"
+    "@types/node": "^20.19.43",
+    "@types/pg": "^8.20.3",
+    "concurrently": "^9.2.4",
+    "drizzle-kit": "^0.20.18",
+    "tsx": "^4.23.4",
+    "typescript": "^5.9.3"
   }
 }

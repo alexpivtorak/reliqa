@@ -17,6 +17,21 @@ export interface DiscoveredEdge {
     action: string;
 }
 
+/** Local Next.js / Vite apps are usually HTTP. HTTPS on localhost often causes ERR_SSL_PROTOCOL_ERROR. */
+export function normalizeCrawlUrl(rawUrl: string): { url: string; rewritten: boolean } {
+    try {
+        const parsed = new URL(rawUrl);
+        const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+        if (isLocal && parsed.protocol === 'https:') {
+            parsed.protocol = 'http:';
+            return { url: parsed.toString(), rewritten: true };
+        }
+    } catch {
+        // keep original
+    }
+    return { url: rawUrl, rewritten: false };
+}
+
 export class DiscoveryCrawler {
     async discover(
         url: string, 
@@ -29,6 +44,14 @@ export class DiscoveryCrawler {
         const visitedUrls = new Set<string>();
 
         try {
+            const normalized = normalizeCrawlUrl(url);
+            if (normalized.rewritten) {
+                const rewriteMsg = `↪️ Rewrote HTTPS localhost URL to HTTP: ${normalized.url}`;
+                console.log(rewriteMsg);
+                onEvent?.({ type: 'log', data: rewriteMsg });
+            }
+            url = normalized.url;
+
             const startMsg = `🔍 DiscoveryCrawler launching on: ${url} (Max Depth: ${maxDepth})`;
             console.log(startMsg);
             onEvent?.({ type: 'log', data: startMsg });

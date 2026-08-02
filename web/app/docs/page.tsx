@@ -103,7 +103,8 @@ export default function DocsPage() {
                         {/* Step 1 */}
                         <div>
                             <h3 className="font-semibold mb-2">1. Setup Environment</h3>
-                            <CodeBlock>{`pnpm install\nnpx playwright install`}</CodeBlock>
+                            <CodeBlock>{`pnpm install`}</CodeBlock>
+                            <p className="text-xs text-muted-foreground mt-2">Installs Node deps and Playwright browsers via <code className="bg-muted px-1 rounded">postinstall</code>.</p>
                             <p className="text-xs text-muted-foreground mt-2">Create a <code className="bg-muted px-1 rounded">.env</code> file in the root:</p>
                             <CodeBlock>{`GOOGLE_API_KEY=your_gemini_api_key_here\nDATABASE_URL=postgres://reliqa:securepassword@127.0.0.1:5433/reliqa_db\nREDIS_URL=redis://127.0.0.1:6379\nGEMINI_MODEL=gemini-2.5-flash # Optional, defaults to gemini-2.5-flash`}</CodeBlock>
                         </div>

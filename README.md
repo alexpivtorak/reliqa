@@ -30,12 +30,13 @@ It operates on a `Job Queue` architecture, making it suitable for B2B deployment
 - A Google AI Studio API Key
 
 ### 1. Setup Environment
-Clone the repo and install dependencies:
+Clone the repo and install everything (Node deps + Playwright browsers) with one command:
 
 ```bash
 pnpm install
-npx playwright install
 ```
+
+`postinstall` runs `playwright install chromium` automatically, including after Playwright version upgrades.
 
 Create a `.env` file in the root:
 
@@ -128,6 +129,7 @@ Example `tests.json` entry:
 
 - **Database Connection Error**: Ensure Docker is running. The default port is mapped to `5433` to avoid conflicts with local Postgres instances.
 - **AI 404 Error**: Ensure you are using a valid model name. The Vision Brain defaults to `gemini-2.5-flash`, overridable via the `GEMINI_MODEL` env var.
+- **Playwright / Scan Application browser missing**: If you see `Executable doesn't exist` or Scan Application fails to crawl, re-run `pnpm install` (or `pnpm exec playwright install chromium`) so Chromium matches the installed Playwright version.
 
 ## 📚 Further Reading
 

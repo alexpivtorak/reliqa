@@ -5,18 +5,30 @@ interface StateSnapshot {
     actionCount: number;
     lastAction?: Action;
     timestamp: number;
+    hadStateChange: boolean;
 }
 
 export class Observer {
     private snapshots: StateSnapshot[] = [];
     private maxSnapshots = 25; // Keep last 25 states
 
-    recordState(url: string, action?: Action) {
+    // On single page apps a dialog or panel can open without touching the URL.
+    // Those actions are real progress, so only actions that changed nothing count as inert.
+    private isInert(index: number, snapshots: StateSnapshot[]): boolean {
+        const snapshot = snapshots[index];
+        if (snapshot.hadStateChange) return false;
+        const previous = snapshots[index - 1];
+        if (previous && previous.url !== snapshot.url) return false;
+        return true;
+    }
+
+    recordState(url: string, action?: Action, hadStateChange: boolean = false) {
         this.snapshots.push({
             url,
             actionCount: this.snapshots.length,
             lastAction: action,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            hadStateChange
         });
 
         // Keep only recent snapshots
@@ -47,22 +59,25 @@ export class Observer {
 
         const isFillingForm = recentTypes >= 3 && current.url === previous.url;
 
-        // Check 1: URL hasn't changed in 15+ ACTIVE actions (but allow form filling)
+        const inertCount = progressActions.filter((_, idx) => this.isInert(idx, progressActions)).length;
+
+        // Check 1: 15+ actions that changed neither the URL nor the page state
         if (current.url === previous.url &&
             previous.url === twoBefore.url &&
-            progressActions.length >= 15 &&
+            inertCount >= 15 &&
             !isFillingForm) {
-            return "STUCK: URL hasn't changed in 15 actions. Possible infinite loop.";
+            return "STUCK: 15 actions produced no page change. Possible infinite loop.";
         }
 
-        // Check 2: Too many clicks without navigation (but allow form filling)
-        const recentClicks = progressActions.slice(-15).filter(
-            s => s.lastAction?.type === 'click'
-        ).length;
+        // Check 2: Too many clicks that changed nothing (but allow form filling)
+        const recentInertClicks = progressActions
+            .slice(-15)
+            .filter((snapshot, idx, window) => snapshot.lastAction?.type === 'click' && this.isInert(idx, window))
+            .length;
 
         // Allow up to 12 clicks in a row (for quantity pickers, carousels)
-        if (recentClicks >= 12 && current.url === previous.url && !isFillingForm) {
-            return "LOOP: Multiple clicks without navigation. Consider typing or waiting.";
+        if (recentInertClicks >= 12 && current.url === previous.url && !isFillingForm) {
+            return "LOOP: Multiple clicks without any page change. Consider typing or waiting.";
         }
 
         const currentAction = current.lastAction;
@@ -75,14 +90,16 @@ export class Observer {
             current.url === previous.url &&
             currentAction.type !== 'type') {
 
-            // Calculate how many times in a row this action type happened
+            // Calculate how many times in a row this action type happened without changing anything
             let repeatCount = 0;
+            let inertRepeatCount = 0;
             const targets = new Set<string>();
 
             for (let i = progressActions.length - 1; i >= 0; i--) {
                 const action = progressActions[i].lastAction;
                 if (action && action.type === currentAction.type) {
                     repeatCount++;
+                    if (this.isInert(i, progressActions)) inertRepeatCount++;
                     // Track unique targets (selectors or coordinates)
                     if (action.selector) targets.add(action.selector);
                     if (action.coordinate) targets.add(`${action.coordinate.x},${action.coordinate.y}`);
@@ -94,19 +111,19 @@ export class Observer {
             // If it's a click loop, check if we are hitting the SAME target
             if (currentAction.type === 'click') {
                 // If we are clicking different things (e.g. checkbox list, tabs), allow more
-                // If we are clicking the EXACT same target 3 times, it's a loop
-                const isSameTargetLoop = targets.size === 1 && repeatCount >= 3;
-                const isGeneralClickLoop = repeatCount >= 15; // Hard limit for any click sequence without navigation
+                // If we are clicking the EXACT same target 3 times with no effect, it's a loop
+                const isSameTargetLoop = targets.size === 1 && inertRepeatCount >= 3;
+                const isGeneralClickLoop = inertRepeatCount >= 15; // Hard limit for clicks that change nothing
 
                 if (isSameTargetLoop) {
-                    return `REPETITION: Clicking the same target ${repeatCount} times without navigation or state change.`;
+                    return `REPETITION: Clicking the same target ${inertRepeatCount} times without navigation or state change.`;
                 }
                 if (isGeneralClickLoop) {
-                    return `LIMIT: 15+ clicks without navigation. The agent might be lost.`;
+                    return `LIMIT: 15+ clicks with no page change. The agent might be lost.`;
                 }
-            } else if (repeatCount >= 5) {
+            } else if (inertRepeatCount >= 5) {
                 // For other actions (like scroll), allow up to 5
-                return `REPETITION: Action (${currentAction.type}) repeated 5+ times.`;
+                return `REPETITION: Action (${currentAction.type}) repeated 5+ times with no effect.`;
             }
         }
 
@@ -124,7 +141,8 @@ export class Observer {
 
         if (last.lastAction?.type === 'click' &&
             prev.lastAction?.type === 'click' &&
-            last.url === prev.url) {
+            last.url === prev.url &&
+            !last.hadStateChange) {
 
             // Check if same selector/coordinate
             const lastTarget = last.lastAction.selector || JSON.stringify(last.lastAction.coordinate);

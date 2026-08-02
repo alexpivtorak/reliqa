@@ -125,6 +125,11 @@ const worker = new Worker('test-queue', async (job: Job) => {
             let stepLoopCount = 0;
             const MAX_STEPS_PER_GOAL = mode === 'chaos' ? 50 : 25;
 
+            // Give the agent a chance to break its own loop before killing the run
+            const MAX_INTERVENTIONS = 3;
+            let consecutiveInterventions = 0;
+            let pendingIntervention: string | null = null;
+
             // --- CACHE CHECK ---
             const currentUrl = browser.page?.url() || url; // simple approximation
             const cachedActions = actionCache.get(currentUrl, currentStep.name, currentStep.goal);
@@ -245,7 +250,14 @@ const worker = new Worker('test-queue', async (job: Job) => {
 
                     // Add observer warnings to the prompt
                     const earlyWarning = observer.getEarlyWarning();
-                    const optimizedHistory = earlyWarning ? `${promptHistory}\n\nATTENTION: ${earlyWarning}` : promptHistory;
+                    let optimizedHistory = earlyWarning ? `${promptHistory}\n\nATTENTION: ${earlyWarning}` : promptHistory;
+
+                    if (pendingIntervention) {
+                        optimizedHistory += `\n\nSTOP REPEATING: ${pendingIntervention}\n` +
+                            `Your last attempts changed nothing. Pick a different element, a different selector, ` +
+                            `or handle the dialog that is currently open. Do not repeat the same click.`;
+                        pendingIntervention = null;
+                    }
 
                     // Get current DOM diff feedback
                     const domDiff = await browser.getDOMDiff();
@@ -307,12 +319,13 @@ const worker = new Worker('test-queue', async (job: Job) => {
                     await browser.page?.waitForLoadState('domcontentloaded', { timeout: 3000 });
                 } catch { }
 
+                // Compare the page before and after the batch, then share that verdict with the Observer
+                const postActionDiff = await browser.getDOMDiff();
+
                 // Record state in Observer (just use last known URL)
                 const currentUrlObs = browser.page?.url() || '';
-                observer.recordState(currentUrlObs, actions[actions.length - 1]); // Record the last action of the batch
+                observer.recordState(currentUrlObs, actions[actions.length - 1], postActionDiff.hasChanges);
 
-                // Record in history with the diff outcome
-                const postActionDiff = await browser.getDOMDiff();
                 // Record the "batch" consequence
                 history.record(actions[actions.length - 1], postActionDiff.summary, i + 1);
 
@@ -327,16 +340,25 @@ const worker = new Worker('test-queue', async (job: Job) => {
                 }
 
                 if (intervention) {
-                    console.warn(`⚠️ Observer Intervention: ${intervention}`);
+                    consecutiveInterventions++;
+                    console.warn(`⚠️ Observer Intervention (${consecutiveInterventions}/${MAX_INTERVENTIONS}): ${intervention}`);
                     redis.publish('reliqa-events', JSON.stringify({
                         runId: testRunId,
                         type: 'log',
-                        message: `⚠️ Observer: ${intervention}`,
+                        message: `⚠️ Observer (${consecutiveInterventions}/${MAX_INTERVENTIONS}): ${intervention}`,
                         timestamp: new Date()
                     }));
                     history.log(`OBSERVER: ${intervention}`);
-                    // Force fail to prevent infinite loops
-                    throw new Error(`Observer detected issue: ${intervention}`);
+
+                    if (consecutiveInterventions >= MAX_INTERVENTIONS) {
+                        // Force fail to prevent infinite loops
+                        throw new Error(`Observer detected issue: ${intervention}`);
+                    }
+
+                    // Warn the agent and let it try a different approach
+                    pendingIntervention = intervention;
+                } else {
+                    consecutiveInterventions = 0;
                 }
 
                 // Periodically update DB logs

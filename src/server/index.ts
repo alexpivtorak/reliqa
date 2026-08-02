@@ -57,8 +57,64 @@ app.use('/videos/*', serveStatic({
     rewriteRequestPath: (path) => path.replace(/^\/videos/, ''),
 }));
 
+app.get('/api/health', (c) => {
+    return c.json({
+        service: 'reliqa-api',
+        status: 'ok',
+        uptimeSeconds: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString()
+    });
+});
+
 app.get('/', (c) => {
-    return c.text('Reliqa API is running!\n Videos at /videos/');
+    return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reliqa API</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        main { text-align: center; padding: 2rem; max-width: 28rem; }
+        .logo { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+        .logo span { color: #a855f7; }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            padding: 0.35rem 0.9rem;
+            border: 1px solid #334155;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
+        p { margin-top: 1.25rem; color: #94a3b8; font-size: 0.95rem; line-height: 1.6; }
+        a { color: #a855f7; text-decoration: none; font-weight: 600; }
+        a:hover { text-decoration: underline; }
+        .links { margin-top: 1.5rem; font-size: 0.85rem; color: #64748b; }
+        .links code { background: #1e293b; padding: 0.15rem 0.45rem; border-radius: 0.35rem; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="logo">Reli<span>qa</span> API</div>
+        <div class="status" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span>Service running on port ${port}</div>
+        <p>This is the backend API for Reliqa, the agentic QA platform. Looking for the dashboard? It runs separately at <a href="http://localhost:3000">localhost:3000</a>.</p>
+        <div class="links">Health check at <code>/api/health</code> &middot; Run videos at <code>/videos/</code></div>
+    </main>
+</body>
+</html>`);
 });
 
 // List recent runs
@@ -262,15 +318,25 @@ app.get('/api/crawl-stream', async (c) => {
     return streamSSE(c, async (stream) => {
         const crawler = new DiscoveryCrawler();
         try {
-            await crawler.discover(url, depth, async (event) => {
+            const result = await crawler.discover(url, depth, async (event) => {
                 await stream.writeSSE({
                     data: JSON.stringify(event.data),
                     event: event.type
                 });
             });
-            // Send complete signal
+
+            if (!result.nodes.length) {
+                await stream.writeSSE({
+                    data: JSON.stringify({
+                        error: "Crawl found 0 pages. Check the Target URL (use http:// for local apps, not https://) and that the site is reachable."
+                    }),
+                    event: 'error'
+                });
+                return;
+            }
+
             await stream.writeSSE({
-                data: JSON.stringify({ success: true }),
+                data: JSON.stringify({ success: true, nodeCount: result.nodes.length }),
                 event: 'complete'
             });
         } catch (err: any) {

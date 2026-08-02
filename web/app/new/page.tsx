@@ -342,25 +342,48 @@ PHASE 3: FINISH
 
     // State crawler discovery calling backend crawler via SSE
     const startDiscovery = async () => {
+        let crawlUrl = url.trim();
+        try {
+            const parsed = new URL(crawlUrl);
+            const isLocal = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+            if (isLocal && parsed.protocol === "https:") {
+                parsed.protocol = "http:";
+                crawlUrl = parsed.toString();
+                setUrl(crawlUrl);
+            }
+        } catch {
+            // keep as typed; server will report errors
+        }
+
         setIsCrawling(true);
         setProgress(5);
-        setLogs([`🔍 Opening SSE connection to trigger crawler for: ${url}`]);
+        setLogs([`🔍 Opening SSE connection to trigger crawler for: ${crawlUrl}`]);
         setShowSitemap(false);
-        setNodes([]); // Reset sitemap layout nodes
-        setSitemapEdges([]); // Reset sitemap layout edges
+        setNodes([]);
+        setSitemapEdges([]);
 
-        // Set up EventSource
-        const encodedUrl = encodeURIComponent(url);
+        const encodedUrl = encodeURIComponent(crawlUrl);
         const sseUrl = `http://localhost:3001/api/crawl-stream?url=${encodedUrl}&depth=${depth}`;
         const eventSource = new EventSource(sseUrl);
 
         let activeNodesList: any[] = [];
+        let settled = false;
+
+        const finishWithFailure = (message: string) => {
+            if (settled) return;
+            settled = true;
+            eventSource.close();
+            setIsCrawling(false);
+            setProgress(100);
+            setShowSitemap(false);
+            setLogs((prev) => [...prev, `❌ ${message}`]);
+            setGoal(`GOAL: Crawl failed. ${message}`);
+        };
 
         eventSource.addEventListener("log", (e) => {
             try {
                 const logMsg = JSON.parse(e.data);
                 setLogs((prev) => [...prev, logMsg]);
-                // Smoothly increment progress bar on each log entry
                 setProgress((prev) => Math.min(prev + 5, 95));
             } catch (err) {
                 console.error("Failed to parse log SSE:", err);
@@ -386,20 +409,40 @@ PHASE 3: FINISH
             }
         });
 
+        eventSource.addEventListener("error", (e) => {
+            try {
+                const payload = JSON.parse((e as MessageEvent).data);
+                finishWithFailure(payload.error || "Crawl failed with an unknown error.");
+            } catch {
+                finishWithFailure("Crawl failed with an unknown error.");
+            }
+        });
+
         eventSource.addEventListener("complete", () => {
+            if (settled) return;
+            settled = true;
             eventSource.close();
             setProgress(100);
             setIsCrawling(false);
+
+            if (activeNodesList.length === 0) {
+                setShowSitemap(false);
+                setLogs((prev) => [
+                    ...prev,
+                    "❌ Discovery finished with 0 pages. Use http:// for local apps (not https://) and confirm the site is up."
+                ]);
+                setGoal("GOAL: Crawl found 0 pages. Fix the Target URL and scan again.");
+                return;
+            }
+
             setLogs((prev) => [...prev, `🎉 Discovery completed successfully! Discovered ${activeNodesList.length} page states.`]);
 
-            // Generate E2E flow choices based on discovered nodes
             const stepsList = activeNodesList.map((n: any, idx: number) => ({
                 name: `Step ${idx + 1}: ${n.title}`,
                 goal: `Navigate to ${n.url} and verify assertions.`
             }));
 
-            // Dynamically build the flows proposal based on what the crawler outputted!
-            const generatedE2EPrompt = `GOAL: Validate the user flow on ${url}.
+            const generatedE2EPrompt = `GOAL: Validate the user flow on ${crawlUrl}.
 
 PHASE 1: NAVIGATION & ACTIONS
 ${activeNodesList.map((n: any, idx: number) => {
@@ -428,7 +471,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                     name: "Chaos Input Fuzzing",
                     description: "Fuzz input forms and inputs detected on crawled pages.",
                     steps: stepsList.slice(0, 3),
-                    generatedGoalPrompt: `GOAL: Fuzz interactive forms discovered during crawling on ${url}.\n\n` + 
+                    generatedGoalPrompt: `GOAL: Fuzz interactive forms discovered during crawling on ${crawlUrl}.\n\n` +
                         activeNodesList.slice(0, 3).map((n: any, idx: number) => {
                             if (n.interactives && n.interactives.length > 0) {
                                 return `${idx + 1}. Go to "${n.title}" and inject SQL/XSS payloads into fields: ${n.interactives.slice(0, 2).join(', ')}`;
@@ -441,39 +484,12 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
             setShowSitemap(true);
         });
 
-        eventSource.onerror = (err) => {
-            console.error("SSE stream error:", err);
-            eventSource.close();
-            setIsCrawling(false);
-
-            // Fallback mock logic if server is rate limited/offline
-            setLogs((prev) => [
-                ...prev,
-                "⚠️ Crawler connection issue. Using cached mockup sitemap instead."
-            ]);
-            setProgress(100);
-
-            const isSauce = url.includes("saucedemo") || url.includes("sauce");
-            if (isSauce) {
-                setNodes([
-                    { id: "1", title: "Login Screen", url: "/", isActive: true, interactives: ["#user-name", "#password", "#login-button"], customAssertion: "Verify standard login fields exist and form inputs are visible.", x: 50, y: 120 },
-                    { id: "2", title: "Inventory Dashboard", url: "/inventory.html", isActive: true, interactives: [".inventory_item", ".btn_primary", ".shopping_cart_link"], customAssertion: "Ensure at least 6 products are displayed on page.", x: 220, y: 120 },
-                    { id: "3", title: "Cart Overview", url: "/cart.html", isActive: true, interactives: [".cart_item", "#checkout", "#continue-shopping"], customAssertion: "Ensure cart list shows exact items added in previous state.", x: 390, y: 120 },
-                    { id: "4", title: "Checkout Info Entry", url: "/checkout-step-one.html", isActive: true, interactives: ["#first-name", "#last-name", "#postal-code", "#continue"], customAssertion: "Validate that ZIP code input is numerical only.", x: 560, y: 40 },
-                    { id: "5", title: "Checkout Overview", url: "/checkout-step-two.html", isActive: true, interactives: ["#finish", "#cancel", ".summary_total_label"], customAssertion: "Check that Total matches Sum of items + Tax.", x: 560, y: 200 },
-                    { id: "6", title: "Checkout Complete", url: "/checkout-complete.html", isActive: true, interactives: ["#back-to-products"], customAssertion: "Ensure success message 'THANK YOU FOR YOUR ORDER' is visible.", x: 730, y: 120 }
-                ]);
-            } else {
-                setNodes([
-                    { id: "1", title: "Landing Page", url: "/", isActive: true, interactives: [".cta-button", "a.nav-link"], customAssertion: "Verify main call-to-action button is visible.", x: 50, y: 120 },
-                    { id: "2", title: "Auth Portal", url: "/login", isActive: true, interactives: ["#email", "#password", "button[type='submit']"], customAssertion: "Ensure username/password credentials fields render properly.", x: 220, y: 120 },
-                    { id: "3", title: "Dashboard Panel", url: "/dashboard", isActive: true, interactives: [".sidebar-menu", "button#logout", "a.profile-link"], customAssertion: "Verify widgets and analytics summary are rendered.", x: 390, y: 120 },
-                    { id: "4", title: "Settings Info", url: "/dashboard/settings", isActive: true, interactives: ["#notifications-toggle", "#dark-mode-switch", "#save-btn"], customAssertion: "Verify configuration switches are functional.", x: 560, y: 40 },
-                    { id: "5", title: "Transactions Log", url: "/dashboard/transactions", isActive: true, interactives: [".transactions-table", "button#filter"], customAssertion: "Ensure records log contains at least one recent item.", x: 560, y: 200 },
-                    { id: "6", title: "Workspace Finished", url: "/dashboard/complete", isActive: true, interactives: ["button#back-home"], customAssertion: "Verify workspace successfully saved banner displays.", x: 730, y: 120 }
-                ]);
-            }
-            setShowSitemap(true);
+        eventSource.onerror = () => {
+            // EventSource also fires onerror when the stream closes after complete/error.
+            if (settled) return;
+            finishWithFailure(
+                "Lost connection to the crawl API at localhost:3001. Is the API server running?"
+            );
         };
     };
 
@@ -614,13 +630,16 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
                                 <Label htmlFor="url">Target URL</Label>
-                                <Input
+                                    <Input
                                     id="url"
-                                    placeholder="https://example.com"
+                                    placeholder="http://localhost:3000"
                                     value={url}
                                     onChange={(e) => setUrl(e.target.value)}
                                     required
                                 />
+                                <p className="text-[11px] text-muted-foreground">
+                                    Local apps need <code className="bg-muted px-1 rounded">http://</code>, not https.
+                                </p>
                             </div>
 
                             <div className="space-y-2">
@@ -696,8 +715,8 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                     </Button>
                                 </div>
 
-                                {/* Progress Simulation */}
-                                {isCrawling && (
+                                {/* Progress + crawl logs stay visible after scan finishes */}
+                                {(isCrawling || logs.length > 0) && (
                                     <div className="space-y-3">
                                         <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                                             <div
@@ -707,7 +726,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                         </div>
                                         <div className="bg-black/50 border rounded-lg p-3 font-mono text-[10px] text-muted-foreground h-32 overflow-y-auto space-y-1">
                                             {logs.map((log, idx) => (
-                                                <div key={idx} className={log?.startsWith("🎉") ? "text-green-400" : log?.startsWith("👉") ? "text-blue-400" : ""}>
+                                                <div key={idx} className={log?.startsWith("🎉") ? "text-green-400" : log?.startsWith("❌") || log?.startsWith("⚠️") ? "text-red-400" : log?.startsWith("👉") ? "text-blue-400" : ""}>
                                                     {log}
                                                 </div>
                                             ))}
