@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Ghost, Play, FileClock, Settings } from 'lucide-react';
+import { Ghost, Play, FileClock, Settings, ShieldCheck } from 'lucide-react';
 
 export function MainNav() {
     const pathname = usePathname();
@@ -19,7 +19,7 @@ export function MainNav() {
         <nav className="flex items-center justify-between px-6 py-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
             <div className="flex items-center gap-6">
                 <Link href="/" className="flex items-center gap-2 font-bold text-xl mr-4 transition-colors hover:text-primary">
-                    <span className="text-2xl">🐺</span> WolfQA
+                    <ShieldCheck className="w-6 h-6" /> Reliqa
                 </Link>
 
                 <div className="flex items-center gap-4 text-sm font-medium">

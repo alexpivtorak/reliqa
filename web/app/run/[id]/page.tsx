@@ -49,7 +49,7 @@ export default function RunPage() {
 
     // Re-run state
     const [isRerunOpen, setIsRerunOpen] = useState(false);
-    const [rerunModel, setRerunModel] = useState("gemini-2.0-flash");
+    const [rerunModel, setRerunModel] = useState("gemini-2.5-flash");
     const [isRerunLoading, setIsRerunLoading] = useState(false);
 
     const handleRerun = async () => {
@@ -248,8 +248,8 @@ export default function RunPage() {
                                             <SelectValue placeholder="Select Model" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="gemini-2.0-flash">⚡ Gemini 2.0 Flash (Recommended)</SelectItem>
-                                            <SelectItem value="gemini-2.0-pro">🧠 Gemini 2.0 Pro (High Reasoning)</SelectItem>
+                                            <SelectItem value="gemini-2.5-flash">⚡ Gemini 2.5 Flash (Recommended)</SelectItem>
+                                            <SelectItem value="gemini-2.5-pro">🧠 Gemini 2.5 Pro (High Reasoning)</SelectItem>
                                             <SelectItem value="gemini-2.5-flash-lite">🏎️ Gemini 2.5 Flash Lite (Fastest)</SelectItem>
                                         </SelectContent>
                                     </Select>

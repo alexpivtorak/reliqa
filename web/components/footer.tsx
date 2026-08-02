@@ -1,18 +1,18 @@
 import Link from 'next/link';
-import { Github } from 'lucide-react';
+import { Github, ShieldCheck } from 'lucide-react';
 
 export function Footer() {
     return (
         <footer className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex flex-col items-center justify-between gap-4 py-6 md:h-16 md:flex-row md:py-0 px-16">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span className="text-base">🐺</span>
+                    <ShieldCheck className="w-4 h-4" />
                     <span>Built by{" "}
                         <Link
                             href="/"
                             className="font-medium text-foreground/80 transition-colors hover:text-foreground"
                         >
-                            WolfQA Team
+                            Reliqa Team
                         </Link>
                     </span>
                 </div>
@@ -25,7 +25,7 @@ export function Footer() {
                         Documentation
                     </Link>
                     <a
-                        href="https://github.com/alexpivtorak/wolfqa"
+                        href="https://github.com/alexpivtorak/reliqa"
                         target="_blank"
                         rel="noreferrer"
                         className="text-muted-foreground transition-colors hover:text-foreground"

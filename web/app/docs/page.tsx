@@ -18,18 +18,18 @@ export default function DocsPage() {
                         <span>📖</span> Documentation
                     </h1>
                     <p className="text-muted-foreground mt-2">
-                        Everything you need to get started with WolfQA.
+                        Everything you need to get started with Reliqa.
                     </p>
                 </div>
 
                 {/* Overview */}
                 <Card>
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2">🐺 Overview</CardTitle>
+                        <CardTitle className="flex items-center gap-2">Overview</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm text-muted-foreground leading-relaxed">
                         <p>
-                            WolfQA is a scalable, containerized platform that uses <strong className="text-foreground">Google Gemini 2.0 Flash</strong> (Vision) and <strong className="text-foreground">Playwright</strong> to autonomously navigate and test web applications.
+                            Reliqa is a scalable, containerized platform that uses <strong className="text-foreground">Google Gemini</strong> (Vision) and <strong className="text-foreground">Playwright</strong> to autonomously navigate and test web applications.
                         </p>
                         <p>
                             It operates on a Job Queue architecture, making it suitable for B2B deployments where hundreds of concurrent tests might be needed.
@@ -37,7 +37,7 @@ export default function DocsPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                             <div className="border rounded-lg p-3 bg-muted/30">
                                 <h4 className="font-semibold text-foreground text-xs mb-1">👁️ Visual Intelligence</h4>
-                                <p className="text-xs">Uses Gemini 2.0 Flash to "see" the page and make decisions based on pixels, not just code selectors.</p>
+                                <p className="text-xs">Uses Gemini (gemini-2.5-flash by default) to "see" the page and make decisions based on pixels, not just code selectors.</p>
                             </div>
                             <div className="border rounded-lg p-3 bg-muted/30">
                                 <h4 className="font-semibold text-foreground text-xs mb-1">🔥 Chaos Mode</h4>
@@ -103,27 +103,27 @@ export default function DocsPage() {
                         {/* Step 1 */}
                         <div>
                             <h3 className="font-semibold mb-2">1. Setup Environment</h3>
-                            <CodeBlock>{`npm install\nnpx playwright install`}</CodeBlock>
+                            <CodeBlock>{`pnpm install\nnpx playwright install`}</CodeBlock>
                             <p className="text-xs text-muted-foreground mt-2">Create a <code className="bg-muted px-1 rounded">.env</code> file in the root:</p>
-                            <CodeBlock>{`GOOGLE_API_KEY=your_gemini_api_key_here\nDATABASE_URL=postgres://wolfqa:securepassword@127.0.0.1:5433/wolfqa_db\nREDIS_URL=redis://127.0.0.1:6379`}</CodeBlock>
+                            <CodeBlock>{`GOOGLE_API_KEY=your_gemini_api_key_here\nDATABASE_URL=postgres://reliqa:securepassword@127.0.0.1:5433/reliqa_db\nREDIS_URL=redis://127.0.0.1:6379\nGEMINI_MODEL=gemini-2.5-flash # Optional, defaults to gemini-2.5-flash`}</CodeBlock>
                         </div>
 
                         {/* Step 2 */}
                         <div>
                             <h3 className="font-semibold mb-2">2. Start Infrastructure</h3>
-                            <CodeBlock>{`docker-compose up -d postgres redis\nnpm run db:push`}</CodeBlock>
+                            <CodeBlock>{`docker-compose up -d postgres redis\npnpm run db:push`}</CodeBlock>
                         </div>
 
                         {/* Step 3 */}
                         <div>
                             <h3 className="font-semibold mb-2">3. Start the Services</h3>
-                            <CodeBlock>{`# Terminal 1: API Server\nnpm run start:server\n\n# Terminal 2: Worker\nnpm run start:worker\n\n# Terminal 3: Dashboard\ncd web && npm run dev`}</CodeBlock>
+                            <CodeBlock>{`# Terminal 1: API Server\npnpm run start:server\n\n# Terminal 2: Worker\npnpm run start:worker\n\n# Terminal 3: Dashboard\ncd web && pnpm run dev`}</CodeBlock>
                         </div>
 
                         {/* Step 4 */}
                         <div>
                             <h3 className="font-semibold mb-2">4. Trigger a Test</h3>
-                            <CodeBlock>{`# Standard Goal-Oriented Test\nnpm run trigger https://www.google.com "Search for entropy"\n\n# Chaos Mode (Monkey Testing)\nnpm run trigger https://example.com "Crash this site" chaos\n\n# Multi-Step Flow (E2E Test)\nnpm run trigger:flow sauce-flow`}</CodeBlock>
+                            <CodeBlock>{`# Standard Goal-Oriented Test\npnpm run trigger https://www.google.com "Search for entropy"\n\n# Chaos Mode (Monkey Testing)\npnpm run trigger https://example.com "Crash this site" chaos\n\n# Multi-Step Flow (E2E Test) - see tests.json for all 10 pre-built flows\npnpm run trigger:flow sauce-nav-flow`}</CodeBlock>
                         </div>
                     </CardContent>
                 </Card>
@@ -144,7 +144,7 @@ export default function DocsPage() {
                             <div className="border rounded-lg p-3 bg-muted/20">
                                 <h4 className="text-sm font-semibold">AI 404 Error</h4>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                    Ensure you are using a valid model name in <code className="bg-muted px-1 rounded">VisionBrain.ts</code> (currently <code className="bg-muted px-1 rounded">gemini-2.0-flash</code>).
+                                    Ensure you are using a valid model name. The Vision Brain defaults to <code className="bg-muted px-1 rounded">gemini-2.5-flash</code>, overridable via the <code className="bg-muted px-1 rounded">GEMINI_MODEL</code> env var.
                                 </p>
                             </div>
                         </div>

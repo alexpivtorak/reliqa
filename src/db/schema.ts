@@ -19,7 +19,7 @@ export const testRuns = pgTable('test_runs', {
     browserConnectUrl: text('browser_connect_url'), // For VNC/Debugger
     startTime: timestamp('start_time'),
     endTime: timestamp('end_time'),
-    model: text('model'), // e.g. gemini-2.0-flash
+    model: text('model'), // e.g. gemini-2.5-flash
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });

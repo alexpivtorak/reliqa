@@ -55,7 +55,7 @@ const phases = [
         emoji: '🔴',
         goal: 'Features required for teams, billing, and large-scale parallel execution.',
         dashboardFeatures: [
-            'ROI Ledger — Widget showing: "WolfQA fixed 14 broken selectors this week. Saved 5.2 engineering hours."',
+            'ROI Ledger — Widget showing: "Reliqa fixed 14 broken selectors this week. Saved 5.2 engineering hours."',
             'Visual Regression Diff — Baseline vs. Current screenshots with diff overlay.',
             'Fleet Status — Grid view of 50+ concurrent browsers running tests in parallel.',
         ],
@@ -77,7 +77,7 @@ export default function RoadmapPage() {
             <div className="w-full max-w-5xl space-y-8">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-                        <span>🐺</span> WolfQA Roadmap
+                        Reliqa Roadmap
                     </h1>
                     <p className="text-muted-foreground mt-2">
                         From a single-player prototype to an enterprise-grade Autonomous QA Platform.

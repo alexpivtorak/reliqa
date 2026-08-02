@@ -1,5 +1,5 @@
 {
-  "name": "wolfqa",
+  "name": "reliqa",
   "version": "1.0.0",
   "description": "Agentic QA Tester using Playwright and Google Gemini",
   "main": "dist/index.js",

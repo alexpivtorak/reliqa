@@ -28,7 +28,7 @@ async function main() {
     let user = await db.query.users.findFirst();
     if (!user) {
         const [newUser] = await db.insert(users).values({
-            email: 'demo@wolfqa.com',
+            email: 'demo@reliqa.com',
             apiKey: 'demo-key'
         }).returning();
         user = newUser;
@@ -52,7 +52,7 @@ async function main() {
 
     // Notify Dashboard via Redis
     const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-    await redis.publish('wolfqa-events', JSON.stringify({
+    await redis.publish('reliqa-events', JSON.stringify({
         type: 'run-created',
         run: testRun,
         timestamp: new Date()

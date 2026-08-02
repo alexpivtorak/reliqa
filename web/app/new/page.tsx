@@ -214,7 +214,7 @@ PHASE 1: INVENTORY & CART
 4. Click "Checkout".
 
 PHASE 2: DATA ENTRY (MANDATORY)
-5. Type "Wolf" in First Name field.
+5. Type "Reli" in First Name field.
 6. Type "QA" in Last Name field.
 7. Type "90210" in Zip field.
 
@@ -264,7 +264,7 @@ PHASE 1: INVENTORY & CART
 5. Click "Checkout".
 
 PHASE 2: DATA ENTRY (MANDATORY)
-6. INSPECT "First Name" field. IF EMPTY -> TYPE "Wolf".
+6. INSPECT "First Name" field. IF EMPTY -> TYPE "Reli".
 7. INSPECT "Last Name" field. IF EMPTY -> TYPE "QA".
 8. INSPECT "Zip" field. IF EMPTY -> TYPE "90210".
 (Do not assume these are filled. Look at the pixels.)

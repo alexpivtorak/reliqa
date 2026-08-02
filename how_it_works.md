@@ -1,6 +1,6 @@
-# How WolfQA Works
+# How Reliqa Works
 
-WolfQA is an **Agentic Quality Assurance (QA) System** that uses **Multimodal AI (Google Gemini 2.0)** and **Playwright** to autonomously test web applications. Unlike traditional selectors-based automation (Selenium/Cypress), WolfQA "looks" at the screen like a human user, understanding context and visual cues to make decisions.
+Reliqa is an **Agentic Quality Assurance (QA) System** that uses **Multimodal AI (Google Gemini)** and **Playwright** to autonomously test web applications. Unlike traditional selectors-based automation (Selenium/Cypress), Reliqa "looks" at the screen like a human user, understanding context and visual cues to make decisions.
 
 ## 🏗️ High-Level Architecture
 
@@ -9,7 +9,7 @@ The system operates on a loop of **See → Think → Act → Verify**.
 ```mermaid
 graph TD
     A[Start Test] --> B[Browser Controller]
-    B -->|Screenshot + Page Context| C[Vision Brain (Gemini 2.0)]
+    B -->|Screenshot + Page Context| C[Vision Brain (Gemini)]
     C -->|Decide Action| D[Action Execution]
     D -->|Click/Type/Scroll| B
     D -->|Log State| E[Observer]
@@ -24,7 +24,7 @@ graph TD
 
 ### 1. Vision Brain (`VisionBrain.ts`)
 The cognitive center of the agent.
-*   **Model**: Uses `gemini-2.0-flash-lite-preview` for high-speed multimodal analysis.
+*   **Model**: Uses `gemini-2.5-flash` by default for high-speed multimodal analysis (override with the `GEMINI_MODEL` env var).
 *   **Input**: Receives a screenshot of the current page, the high-level goal (e.g., "Login with user X"), and a textual history of past actions.
 *   **Context Awareness**: It is fed a "Distilled DOM" (see below) to ground its visual understanding with actual element coordinates and attributes.
 *   **Output**: Structured JSON decisions (`click`, `type`, `wait`, `done`, `fail`).
@@ -61,6 +61,23 @@ A specialized module for stress testing.
     *   **High Latency**: artificial 1-3s delays (20% chance).
 *   **Rage Clicks**: Rapidly clicking an element 10+ times to trigger race conditions.
 
+### 6. Optimizer (`Optimizer.ts`)
+Cleans up a recorded run before it becomes a reusable cache entry.
+*   **Strips Noise**: Drops `wait` and `fail` actions so cached paths only contain the successful, decisive steps.
+*   **Deduplication**: Collapses consecutive identical actions (the "typed the same field twice" or "clicked the same button twice" panic pattern) down to a single action.
+*   **Output**: A minimal, clean action sequence handed off to `ActionCache` for fast-path replay.
+
+### 7. History Manager (`HistoryManager.ts`)
+Keeps the Brain's prompt context small without losing memory of the run.
+*   **Rolling Window**: Keeps the last 5 actions in full detail for the prompt; older steps are collapsed into a one-line summary (e.g. `[Steps 1-6]: 6 previous actions completed`).
+*   **Outcome Tracking**: Records the outcome of every action so the Brain can see whether prior attempts succeeded or produced "No changes".
+
+### 8. Discovery Crawler (`DiscoveryCrawler.ts`)
+An automated site-mapping tool, separate from the goal-driven test loop.
+*   **BFS Crawl**: Starting from a URL, it breadth-first crawls the app (up to a configurable depth), visiting each new page it discovers.
+*   **Sitemap Output**: Produces a graph of `nodes` (pages, with their interactive elements) and `edges` (the actions/links that connect them).
+*   **Live Streaming**: Progress is streamed to the frontend over Server-Sent Events at `/api/crawl-stream`, and surfaced in the "New Mission" page so a user can see the site being mapped in real time before launching a test.
+
 ## 🔄 The "Thinking" Loop (Standard Mode)
 
 1.  **Capture**: Browser takes a screenshot and distills the DOM.
@@ -81,7 +98,7 @@ In Chaos Mode, the rules change:
 
 ## 🚀 Key Differentiators
 
-| Feature | WolfQA | Traditional Selenium/Cypress |
+| Feature | Reliqa | Traditional Selenium/Cypress |
 | :--- | :--- | :--- |
 | **Selectors** | **Visual & Coordinate-based** (Robust to DOM changes) | **Strict CSS/XPath** (Brittle) |
 | **Logic** | **AI Reasoning** (Can adapt to popups/redesigns) | **Hardcoded Scripts** |

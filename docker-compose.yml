@@ -1,18 +1,20 @@
+name: reliqa
+
 services:
   # PostgreSQL: Primary Database for Test Results, Users, and Organizations
   postgres:
     image: postgres:16-alpine
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-wolfqa}
+      POSTGRES_USER: ${POSTGRES_USER:-reliqa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securepassword}
-      POSTGRES_DB: ${POSTGRES_DB:-wolfqa_db}
+      POSTGRES_DB: ${POSTGRES_DB:-reliqa_db}
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - wolfqa-network
+      - reliqa-network
 
   # Redis: High-performance Job Queue (BullMQ)
   redis:
@@ -23,11 +25,11 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - wolfqa-network
+      - reliqa-network
 
-  # WolfQA Worker: The Agentic Browser Runner
+  # Reliqa Worker: The Agentic Browser Runner
   # Scale this service to run multiple concurrent tests
-  wolfqa-worker:
+  reliqa-worker:
     build: .
     restart: on-failure
     depends_on:
@@ -35,17 +37,17 @@ services:
       - redis
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER:-wolfqa}:${POSTGRES_PASSWORD:-securepassword}@postgres:5432/${POSTGRES_DB:-wolfqa_db}
+      DATABASE_URL: postgres://${POSTGRES_USER:-reliqa}:${POSTGRES_PASSWORD:-securepassword}@postgres:5432/${POSTGRES_DB:-reliqa_db}
       REDIS_URL: redis://redis:6379
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
     networks:
-      - wolfqa-network
+      - reliqa-network
     # Mount artifacts for local debugging (optional)
     volumes:
       - ./artifacts:/app/artifacts
 
 networks:
-  wolfqa-network:
+  reliqa-network:
     driver: bridge
 
 volumes:

@@ -916,7 +916,7 @@ export class BrowserController {
                     }
 
                     // FIX: Trigger blur to ensure change events fire immediately
-                    // This prevents the "WolfWolf" race condition where validation hasn't run yet
+                    // This prevents the "ReliReli" race condition where validation hasn't run yet
                     if (action.selector) {
                         try {
                             const escapedSelector = this.escapeSelector(action.selector);

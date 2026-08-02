@@ -23,8 +23,8 @@ const testQueue = new Queue('test-queue', { connection });
 // WE NEED REDIS PUB/SUB for inter-process communication.
 //
 // Refactoring plan:
-// 1. Worker publishes events to Redis 'wolfqa-events' channel.
-// 2. Server subscribes to Redis 'wolfqa-events' channel.
+// 1. Worker publishes events to Redis 'reliqa-events' channel.
+// 2. Server subscribes to Redis 'reliqa-events' channel.
 // 3. Server forwards events to SSE clients.
 
 
@@ -77,7 +77,7 @@ async function main() {
 
     // Notify Dashboard via Redis
     const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-    await redis.publish('wolfqa-events', JSON.stringify({
+    await redis.publish('reliqa-events', JSON.stringify({
         type: 'run-created',
         run: testRun,
         timestamp: new Date()

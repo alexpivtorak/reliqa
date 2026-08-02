@@ -57,7 +57,7 @@ export class VisionBrain {
       ` : '';
 
         if (runId) {
-            redis.publish('wolfqa-events', JSON.stringify({ runId, type: 'thought', message: 'Analyzing page state...', timestamp: new Date() }));
+            redis.publish('reliqa-events', JSON.stringify({ runId, type: 'thought', message: 'Analyzing page state...', timestamp: new Date() }));
         }
 
         const prompt = `
@@ -249,7 +249,7 @@ ${contextSection}${diffSection}
                 if (runId) {
                     // Publish the specific "Chain of Thought" event
                     if (parsed.thought) {
-                        redis.publish('wolfqa-events', JSON.stringify({
+                        redis.publish('reliqa-events', JSON.stringify({
                             runId,
                             type: 'log',
                             message: `💭 BIG BRAIN: ${parsed.thought}`, // Distinct prefix
@@ -257,7 +257,7 @@ ${contextSection}${diffSection}
                         }));
                     }
 
-                    redis.publish('wolfqa-events', JSON.stringify({ runId, type: 'step', action, timestamp: new Date() }));
+                    redis.publish('reliqa-events', JSON.stringify({ runId, type: 'step', action, timestamp: new Date() }));
                 }
 
                 return { thought: parsed.thought, actions: parsed.actions || [action] };
@@ -270,7 +270,7 @@ ${contextSection}${diffSection}
                     const rateLimitMsg = `⏳ ${errorType}. Waiting ${isRateLimit ? delay : 500}ms... (Attempts left: ${retries})`;
                     console.log(rateLimitMsg);
                     if (runId) {
-                        redis.publish('wolfqa-events', JSON.stringify({
+                        redis.publish('reliqa-events', JSON.stringify({
                             runId,
                             type: 'log',
                             message: `⚠️ ${rateLimitMsg}`,
@@ -283,7 +283,7 @@ ${contextSection}${diffSection}
                 } else {
                     const errMsg = `Brain error: ${error.message}`;
                     if (runId) {
-                        redis.publish('wolfqa-events', JSON.stringify({
+                        redis.publish('reliqa-events', JSON.stringify({
                             runId,
                             type: 'log',
                             message: `❌ ${errMsg}`,

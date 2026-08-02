@@ -30,7 +30,7 @@ export class Optimizer {
                 continue;
             }
 
-            // 3. Deduplicate consecutive identical actions (The "WolfWolf" fix)
+            // 3. Deduplicate consecutive identical actions (The "ReliReli" fix)
             // If the next action is IDENTICAL to the current one, skip the current one (keep the last one)
             // We compare type and key parameters (selector, text, coordinate)
             if (next && this.areActionsIdentical(current, next)) {

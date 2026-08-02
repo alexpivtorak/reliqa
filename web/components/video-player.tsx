@@ -86,7 +86,7 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
                     </Button>
                 </div>
                 <Button variant="outline" size="sm" asChild>
-                    <a href={src} download={`wolfqa-run.webm`} target="_blank" rel="noopener noreferrer">
+                    <a href={src} download={`reliqa-run.webm`} target="_blank" rel="noopener noreferrer">
                         <Download className="h-4 w-4 mr-1" />
                         Download
                     </a>

@@ -1,7 +1,7 @@
-# WolfQA Agent Failure Report: "Clean the Field" Loop
+# Reliqa Agent Failure Report: "Clean the Field" Loop
 
 ## Issue Description
-The **WolfQA Agent** (powered by Gemini 2.0 Flash) gets stuck in an infinite loop while attempting to `Login`. 
+The **Reliqa Agent** (powered by Gemini 2.0 Flash) gets stuck in an infinite loop while attempting to `Login`. 
 
 Instead of proceeding to click the Login button after typing credentials, it repeatedly attempts to **"Clear username field"** by clicking various coordinates around the input box.
 

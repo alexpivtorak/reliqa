@@ -20,13 +20,13 @@ export const eventBus = new EventEmitter();
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const subscriber = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
-subscriber.subscribe('wolfqa-events', (err: any, count: any) => {
+subscriber.subscribe('reliqa-events', (err: any, count: any) => {
     if (err) console.error('Failed to subscribe: %s', err.message);
     else console.log(`Subscribed to ${count} channels. Listening for updates...`);
 });
 
 subscriber.on('message', (channel: string, message: string) => {
-    if (channel === 'wolfqa-events') {
+    if (channel === 'reliqa-events') {
         try {
             const data = JSON.parse(message);
             // Re-emit internally so SSE handlers can pick it up
@@ -58,7 +58,7 @@ app.use('/videos/*', serveStatic({
 }));
 
 app.get('/', (c) => {
-    return c.text('WolfQA API is running! 🐺\n Videos at /videos/');
+    return c.text('Reliqa API is running!\n Videos at /videos/');
 });
 
 // List recent runs
@@ -138,7 +138,7 @@ app.post('/api/jobs', async (c) => {
         url: url,
         goal: goal,
         status: 'queued',
-        model: model || 'gemini-2.0-flash' // Default if not provided
+        model: model || 'gemini-2.5-flash' // Default if not provided
     }).returning();
 
     const queue = new Queue('test-queue', { connection: redis as any });
@@ -150,7 +150,7 @@ app.post('/api/jobs', async (c) => {
         testRunId: testRun.id,
         mode,
         chaosProfile,
-        model: model || 'gemini-2.0-flash',
+        model: model || 'gemini-2.5-flash',
         headless: headless !== false, // Default true
         disableCache: disableCache === true
     });

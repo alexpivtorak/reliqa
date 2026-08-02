@@ -8,7 +8,7 @@ export interface Run {
     videoUrl?: string; // e.g. /videos/run-123.webm
     createdAt: string;
     logs?: string;
-    model?: string; // e.g. gemini-2.0-flash
+    model?: string; // e.g. gemini-2.5-flash
 }
 
 export interface Step {

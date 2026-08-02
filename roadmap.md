@@ -1,6 +1,6 @@
-# 🐺 WolfQA Development Roadmap
+# Reliqa Development Roadmap
 
-This document outlines the evolutionary stages of WolfQA, moving from a single-player prototype to an enterprise-grade Autonomous QA Platform.
+This document outlines the evolutionary stages of Reliqa, moving from a single-player prototype to an enterprise-grade Autonomous QA Platform.
 
 ## 📅 High-Level Timeline
 
@@ -65,7 +65,7 @@ This document outlines the evolutionary stages of WolfQA, moving from a single-p
 
 ### 🖥️ Dashboard Features (UI)
 * **The "ROI" Ledger:**
-    * A widget showing: *"WolfQA fixed 14 broken selectors this week. Saved 5.2 engineering hours."*
+    * A widget showing: *"Reliqa fixed 14 broken selectors this week. Saved 5.2 engineering hours."*
 * **Visual Regression Diff:**
     * Automatic comparison of "Baseline" vs. "Current" screenshots with a diff overlay (Red pixels = changes).
 * **Fleet Status:**

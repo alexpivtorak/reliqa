@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const connectionString = process.env.DATABASE_URL || 'postgres://wolfqa:securepassword@127.0.0.1:5432/wolfqa_db';
+const connectionString = process.env.DATABASE_URL || 'postgres://reliqa:securepassword@127.0.0.1:5432/reliqa_db';
 
 console.log(`Debug: Attempting connection to: ${connectionString.replace(/:[^:@]*@/, ':***@')}`);
 

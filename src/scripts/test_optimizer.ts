@@ -7,8 +7,8 @@ console.log('🧪 Testing Optimizer...');
 const badActions: Action[] = [
     { type: 'navigate', text: 'http://example.com' },
     { type: 'wait', duration: 1000 }, // Should be removed
-    { type: 'type', selector: '#input', text: 'Wolf' },
-    { type: 'type', selector: '#input', text: 'Wolf' }, // Identical - should be removed
+    { type: 'type', selector: '#input', text: 'Reli' },
+    { type: 'type', selector: '#input', text: 'Reli' }, // Identical - should be removed
     { type: 'click', selector: '#btn', reason: 'Submit' },
     { type: 'fail', reason: 'panic' }, // Should be removed
     { type: 'click', selector: '#btn', reason: 'Submit' }, // Not consecutive with previous click due to fail, but let's see. 
@@ -43,7 +43,7 @@ const badActions: Action[] = [
 // This reveals a flaw or feature? If there was a fail in between, maybe it WASN't a panic loop in the same second, but a retry?
 // But `Optimizer` is for "Golden Path". We probably want to dedupe even if there was noise.
 // BUT, my current implementation only looks at immediate neighbor in source array.
-// For now, let's verify it works for immediate neighbors which is the "WolfWolf" case (type, type).
+// For now, let's verify it works for immediate neighbors which is the "ReliReli" case (type, type).
 
 const optimized = Optimizer.optimizeActions(badActions);
 

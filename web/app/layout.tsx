@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WolfQA — Autonomous QA Platform",
+  title: "Reliqa — Autonomous QA Platform",
   description: "AI-powered QA agent that tests your web application using Google Gemini Vision and Playwright.",
 };
 

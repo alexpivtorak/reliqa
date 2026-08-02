@@ -35,15 +35,15 @@ const worker = new Worker('test-queue', async (job: Job) => {
     await db.update(testRuns).set({ status: 'running' }).where(eq(testRuns.id, testRunId));
 
     // Emit Status Event
-    redis.publish('wolfqa-events', JSON.stringify({
+    redis.publish('reliqa-events', JSON.stringify({
         runId: testRunId,
         type: 'status',
         status: 'running',
         timestamp: new Date()
     }));
 
-    const startMsg = `🚀 Starting job: ${testName} (${model || 'gemini-2.0-flash'})`;
-    redis.publish('wolfqa-events', JSON.stringify({
+    const startMsg = `🚀 Starting job: ${testName} (${model || 'gemini-2.5-flash'})`;
+    redis.publish('reliqa-events', JSON.stringify({
         runId: testRunId,
         type: 'log',
         message: startMsg,
@@ -104,7 +104,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
             history.log(`\n--- STEP ${i + 1}: ${currentStep.name} (${currentStep.goal}) ---`);
 
             const stepMsg = `📍 Step ${i + 1}: ${currentStep.name}`;
-            redis.publish('wolfqa-events', JSON.stringify({
+            redis.publish('reliqa-events', JSON.stringify({
                 runId: testRunId,
                 type: 'log',
                 message: stepMsg,
@@ -136,7 +136,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
                 try {
                     // Take a screenshot per step or every few actions to keep the live feed alive
                     const screenshot = await browser.getScreenshot();
-                    redis.publish('wolfqa-events', JSON.stringify({
+                    redis.publish('reliqa-events', JSON.stringify({
                         runId: testRunId,
                         type: 'frame',
                         data: screenshot.toString('base64'),
@@ -151,7 +151,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
                         console.log(cachedActionMsg);
 
                         history.log(cachedActionMsg);
-                        redis.publish('wolfqa-events', JSON.stringify({
+                        redis.publish('reliqa-events', JSON.stringify({
                             runId: testRunId,
                             type: 'log',
                             message: cachedActionMsg,
@@ -173,7 +173,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
                     history.log(`[CACHE] Successfully executed ${cachedActions.length} actions.`);
 
                     const cacheMsg = `⚡ FAST FORWARD: Executed ${cachedActions.length} cached actions.`;
-                    redis.publish('wolfqa-events', JSON.stringify({
+                    redis.publish('reliqa-events', JSON.stringify({
                         runId: testRunId,
                         type: 'log',
                         message: cacheMsg,
@@ -201,7 +201,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
                     throw new Error('Mission stopped by user');
                 }
 
-                redis.publish('wolfqa-events', JSON.stringify({
+                redis.publish('reliqa-events', JSON.stringify({
                     runId: testRunId,
                     type: 'log',
                     message: `📸 Capturing page state [Iteration ${stepLoopCount + 1}]...`,
@@ -219,7 +219,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
 
                 // FIREHOSE: Emit screenshot as a frame for live viewing
                 // We use a separate channel or event type to distinguishing from logs
-                redis.publish('wolfqa-events', JSON.stringify({
+                redis.publish('reliqa-events', JSON.stringify({
                     runId: testRunId,
                     type: 'frame',
                     data: screenshot.toString('base64'),
@@ -229,7 +229,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
 
                 const pageContext = await browser.getPageContext();
 
-                redis.publish('wolfqa-events', JSON.stringify({
+                redis.publish('reliqa-events', JSON.stringify({
                     runId: testRunId,
                     type: 'log',
                     message: `🧠 Thinking about next step...`,
@@ -265,7 +265,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
                     if (action.key) details += ` Key="${action.key}"`;
 
                     const actionLogMsg = `👉 Action: ${action.type}${details} (${action.reason || ''})`;
-                    redis.publish('wolfqa-events', JSON.stringify({
+                    redis.publish('reliqa-events', JSON.stringify({
                         runId: testRunId,
                         type: 'log',
                         message: actionLogMsg,
@@ -328,7 +328,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
 
                 if (intervention) {
                     console.warn(`⚠️ Observer Intervention: ${intervention}`);
-                    redis.publish('wolfqa-events', JSON.stringify({
+                    redis.publish('reliqa-events', JSON.stringify({
                         runId: testRunId,
                         type: 'log',
                         message: `⚠️ Observer: ${intervention}`,
@@ -389,7 +389,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
             videoUrl: finalVideoPath || undefined
         }).where(eq(testRuns.id, testRunId));
 
-        redis.publish('wolfqa-events', JSON.stringify({
+        redis.publish('reliqa-events', JSON.stringify({
             runId: testRunId,
             type: 'status',
             status: 'completed',
@@ -398,7 +398,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
             timestamp: new Date()
         }));
 
-        redis.publish('wolfqa-events', JSON.stringify({
+        redis.publish('reliqa-events', JSON.stringify({
             runId: testRunId,
             type: 'log',
             message: `✅ Job Completed Successfully`,
@@ -432,7 +432,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
             videoUrl: finalVideoPath || undefined
         }).where(eq(testRuns.id, testRunId));
 
-        redis.publish('wolfqa-events', JSON.stringify({
+        redis.publish('reliqa-events', JSON.stringify({
             runId: testRunId,
             type: 'status',
             status: finalStatus,
@@ -441,7 +441,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
             timestamp: new Date()
         }));
 
-        redis.publish('wolfqa-events', JSON.stringify({
+        redis.publish('reliqa-events', JSON.stringify({
             runId: testRunId,
             type: 'log',
             message: isStopped ? '🛑 Mission stopped' : `❌ Job Failed: ${error.message}`,
