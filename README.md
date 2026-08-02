@@ -16,11 +16,11 @@ It operates on a `Job Queue` architecture, making it suitable for B2B deployment
 
 ## Architecture
 
-1.  **Manager (Docker)**: Orchestrates the system.
-    -   `PostgreSQL`: Database for persistence.
-    -   `Redis`: Job Queue.
-2.  **Worker (Node.js)**: Consumes jobs, launches Playwright, and runs the AI loop.
-3.  **Brain (Gemini)**: The Vision Language Model (VLM) deciding actions.
+1.  **Web Dashboard (Next.js)**: Live runs, mission builder, Chaos Controls. Gated by Better Auth (Google sign-in + email allowlist); proxies `/api` to the API server.
+2.  **API Server (Hono)**: REST + SSE, job enqueueing, Better Auth handler. Protected routes require a session.
+3.  **Worker (Node.js)**: Consumes BullMQ jobs, launches Playwright, and runs the AI loop.
+4.  **Brain (Gemini)**: The Vision Language Model (VLM) deciding actions.
+5.  **Infra (Docker)**: PostgreSQL (runs + auth tables) and Redis (job queue + events).
 
 ## 🚀 Quick Start
 
@@ -28,6 +28,7 @@ It operates on a `Job Queue` architecture, making it suitable for B2B deployment
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Must be running)
 - [Node.js](https://nodejs.org/) (v20+)
 - A Google AI Studio API Key
+- A Google OAuth Client ID (for dashboard sign-in)
 
 ### 1. Setup Environment
 Clone the repo and install everything (Node deps + Playwright browsers) with one command:
@@ -57,26 +58,29 @@ AUTH_ALLOWED_EMAILS=you@example.com
 For Google sign-in, create an OAuth 2.0 Client ID in [Google Cloud Console](https://console.cloud.google.com/apis/credentials). Set the authorized redirect URI to `http://localhost:3000/api/auth/callback/google`. Put your email in `AUTH_ALLOWED_EMAILS` (comma-separated) so only approved accounts can sign up.
 
 ### 2. Start Everything
-The easiest way to start the entire ecosystem (Infra, API, Worker, and Web Dashboard):
+Push the schema first (includes auth tables), then start the app:
 
 ```bash
-# Start all services (Postgres, Redis, API, Worker, Web)
-pnpm run up
-
-# Run database migrations (first time only)
+# Start Postgres & Redis, then apply schema (first time / after schema changes)
+pnpm run infra:up
 pnpm run db:push
+
+# Start API, Worker, and Web Dashboard
+pnpm run dev:all
 ```
 
-### 3. Open the Dashboard
-Once everything is running, open the Web Dashboard in your browser:
+Or use `pnpm run up` (infra + app in one go), then run `pnpm run db:push` once Postgres is ready — before signing into the dashboard so `session`, `account`, and `verification` exist.
 
-- **Web Dashboard**: [http://localhost:3000](http://localhost:3000) — view live runs, launch new missions, and use Chaos Controls.
+### 3. Open the Dashboard
+Open the Web Dashboard and sign in with an allowlisted Google account:
+
+- **Web Dashboard**: [http://localhost:3000](http://localhost:3000) — you will be redirected to `/sign-in` until authenticated. After sign-in: live runs, new missions, Chaos Controls.
 - **API Server**: `http://localhost:3001` — runs behind the dashboard (SSE streams, run/step data). No need to open this directly.
 
 ---
 
 ### 4. Trigger a Test
-In another terminal, send a job to the queue:
+In another terminal, queue a job via the CLI (uses a local dev user in the DB; does not require a browser Google session):
 
 ```bash
 # Standard Goal-Oriented Test
