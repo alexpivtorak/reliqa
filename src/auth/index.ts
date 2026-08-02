@@ -1,8 +1,12 @@
 import { betterAuth } from 'better-auth';
-import { APIError } from 'better-auth/api';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { db } from '../db/index.js';
 import * as schema from '../db/schema.js';
+
+export const AUTH_SEED_EMAIL = (process.env.AUTH_SEED_EMAIL || 'agent@reliqa.local').trim().toLowerCase();
+export const AUTH_SEED_PASSWORD = process.env.AUTH_SEED_PASSWORD || 'reliqa-agent-pass';
+export const AUTH_SEED_NAME = process.env.AUTH_SEED_NAME || 'Reliqa Agent';
 
 function parseAllowedEmails(): Set<string> {
     const raw = process.env.AUTH_ALLOWED_EMAILS || '';
@@ -16,9 +20,16 @@ function parseAllowedEmails(): Set<string> {
 
 function isAllowedEmail(email: string | undefined | null): boolean {
     if (!email) return false;
+    const normalized = email.trim().toLowerCase();
+    if (normalized === AUTH_SEED_EMAIL) return true;
     const allowed = parseAllowedEmails();
     if (allowed.size === 0) return false;
-    return allowed.has(email.trim().toLowerCase());
+    return allowed.has(normalized);
+}
+
+export function isSeedEmail(email: string | undefined | null): boolean {
+    if (!email) return false;
+    return email.trim().toLowerCase() === AUTH_SEED_EMAIL;
 }
 
 export const auth = betterAuth({
@@ -36,6 +47,12 @@ export const auth = betterAuth({
     user: {
         modelName: 'users',
     },
+    emailAndPassword: {
+        enabled: true,
+        disableSignUp: true,
+        minPasswordLength: 8,
+        autoSignIn: true,
+    },
     socialProviders: {
         google: {
             clientId: process.env.GOOGLE_CLIENT_ID as string,
@@ -52,6 +69,20 @@ export const auth = betterAuth({
                 return crypto.randomUUID();
             },
         },
+    },
+    hooks: {
+        before: createAuthMiddleware(async (ctx) => {
+            if (ctx.path !== '/sign-in/email') {
+                return;
+            }
+
+            const email = typeof ctx.body?.email === 'string' ? ctx.body.email : '';
+            if (!isSeedEmail(email)) {
+                throw new APIError('FORBIDDEN', {
+                    message: 'Password sign-in is only available for the seed agent account.',
+                });
+            }
+        }),
     },
     databaseHooks: {
         user: {

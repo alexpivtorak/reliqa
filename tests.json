@@ -200,5 +200,20 @@
                 "goal": "Ensure that DuckDuckGo's 'Bang' or privacy shield information is visible"
             }
         ]
+    },
+    {
+        "id": "reliqa-self-login",
+        "name": "Reliqa Self-Test Login",
+        "url": "http://localhost:3000/sign-in",
+        "steps": [
+            {
+                "name": "1. Password login",
+                "goal": "On the Reliqa sign-in page, enter email 'agent@reliqa.local' into the email field (data-testid sign-in-email) and password 'reliqa-agent-pass' into the password field (data-testid sign-in-password). Click the button 'Sign in with password' (data-testid sign-in-password-submit). Do not use Google. Verify we leave /sign-in and land on the dashboard."
+            },
+            {
+                "name": "2. Open New Mission",
+                "goal": "Click the navigation link or button to open New Mission / start a new run. Verify the New Mission page is visible."
+            }
+        ]
     }
 ]

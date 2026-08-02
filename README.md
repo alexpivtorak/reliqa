@@ -53,9 +53,14 @@ GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
 BETTER_AUTH_SECRET=generate_with_openssl_rand_base64_32
 BETTER_AUTH_URL=http://localhost:3000
 AUTH_ALLOWED_EMAILS=you@example.com
+AUTH_SEED_EMAIL=agent@reliqa.local
+AUTH_SEED_PASSWORD=reliqa-agent-pass
+AUTH_SEED_NAME=Reliqa Agent
 ```
 
-For Google sign-in, create an OAuth 2.0 Client ID in [Google Cloud Console](https://console.cloud.google.com/apis/credentials). Set the authorized redirect URI to `http://localhost:3000/api/auth/callback/google`. Put your email in `AUTH_ALLOWED_EMAILS` (comma-separated) so only approved accounts can sign up.
+For Google sign-in, create an OAuth 2.0 Client ID in [Google Cloud Console](https://console.cloud.google.com/apis/credentials). Set the authorized redirect URI to `http://localhost:3000/api/auth/callback/google`. Put your email in `AUTH_ALLOWED_EMAILS` (comma-separated) so only approved accounts can sign up with Google.
+
+Password sign-in is always on the `/sign-in` form, but **only** the seed user (`AUTH_SEED_EMAIL` / `AUTH_SEED_PASSWORD`) can use it — for agents testing Reliqa itself. The API seeds that user on startup (`pnpm run auth:seed` also works). Public password signup is disabled.
 
 ### 2. Start Everything
 Push the schema first (includes auth tables), then start the app:
@@ -72,9 +77,10 @@ pnpm run dev:all
 Or use `pnpm run up` (infra + app in one go), then run `pnpm run db:push` once Postgres is ready — before signing into the dashboard so `session`, `account`, and `verification` exist.
 
 ### 3. Open the Dashboard
-Open the Web Dashboard and sign in with an allowlisted Google account:
+Open the Web Dashboard and sign in (Google allowlisted account, or the seed password user):
 
 - **Web Dashboard**: [http://localhost:3000](http://localhost:3000) — you will be redirected to `/sign-in` until authenticated. After sign-in: live runs, new missions, Chaos Controls.
+- **Agent / self-test login**: email `AUTH_SEED_EMAIL` (default `agent@reliqa.local`) and `AUTH_SEED_PASSWORD`.
 - **API Server**: `http://localhost:3001` — runs behind the dashboard (SSE streams, run/step data). No need to open this directly.
 
 ---

@@ -12,6 +12,7 @@ import { EventEmitter } from 'events';
 import { Redis } from 'ioredis';
 import { Queue } from 'bullmq';
 import { auth } from '../auth/index.js';
+import { ensureSeedUser } from '../scripts/ensure-seed-user.js';
 import { sessionMiddleware, requireAuth, type AuthVariables } from './auth-middleware.js';
 
 const app = new Hono<{ Variables: AuthVariables }>();
@@ -476,9 +477,15 @@ app.get('/api/stream/:id', requireAuth, async (c) => {
 });
 
 const port = 3001;
-console.log(`🚀 Server is running on port ${port}`);
 
-serve({
-    fetch: app.fetch,
-    port
-});
+ensureSeedUser()
+    .catch((err) => {
+        console.error('[auth] Failed to ensure seed user:', err);
+    })
+    .finally(() => {
+        console.log(`🚀 Server is running on port ${port}`);
+        serve({
+            fetch: app.fetch,
+            port,
+        });
+    });

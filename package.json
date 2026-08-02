@@ -20,6 +20,7 @@
     "db:generate": "drizzle-kit generate:pg",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:push": "drizzle-kit push:pg",
+    "auth:seed": "tsx src/scripts/ensure-seed-user.ts",
     "lint": "eslint .",
     "infra:up": "docker-compose up -d postgres redis",
     "infra:down": "docker-compose down",
