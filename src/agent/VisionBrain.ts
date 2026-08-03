@@ -25,7 +25,7 @@ export class VisionBrain {
         this.model = this.genAI.getGenerativeModel({ model: selectedModel });
     }
 
-    async decideAction(screenshot: Buffer, goal: string, history: string[], pageContext?: string, domDiff?: string, runId?: number): Promise<{ thought: string, actions: Action[] }> {
+    async decideAction(screenshot: Buffer, goal: string, history: string[], pageContext?: string | null, domDiff?: string, runId?: number): Promise<{ thought: string, actions: Action[] }> {
         const contextSection = pageContext ? `
       
       PAGE CONTEXT (Distilled DOM):
@@ -182,26 +182,61 @@ ${contextSection}${diffSection}
         return response;
     }
 
-    private extractFirstJSON(text: string): string | null {
-        let firstBrace = text.indexOf('{');
-        if (firstBrace === -1) return null;
+    /**
+     * Collects every top level balanced {...} group in the text.
+     * The model often writes prose containing braces, so the first group
+     * is not reliably the action payload.
+     */
+    private findBalancedGroups(text: string): string[] {
+        const groups: string[] = [];
+        let depth = 0;
+        let start = -1;
 
-        let count = 0;
-        let lastBrace = -1;
-
-        for (let i = firstBrace; i < text.length; i++) {
-            if (text[i] === '{') count++;
-            if (text[i] === '}') {
-                count--;
-                if (count === 0) {
-                    lastBrace = i;
-                    break;
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            if (char === '{') {
+                if (depth === 0) start = i;
+                depth++;
+            } else if (char === '}') {
+                if (depth === 0) continue;
+                depth--;
+                if (depth === 0 && start !== -1) {
+                    groups.push(text.substring(start, i + 1));
+                    start = -1;
                 }
             }
         }
 
-        if (lastBrace === -1) return null;
-        return text.substring(firstBrace, lastBrace + 1);
+        return groups;
+    }
+
+    /**
+     * Picks the balanced group that actually carries an action.
+     * Prefers the last usable candidate because models tend to reason first
+     * and emit the final JSON payload at the end of the response.
+     */
+    private extractActionJSON(text: string): string | null {
+        const groups = this.findBalancedGroups(text);
+        let fallback: string | null = null;
+
+        for (const group of groups) {
+            let parsed: any;
+            try {
+                parsed = JSON.parse(this.repairJSON(group));
+            } catch {
+                continue;
+            }
+
+            if (!parsed || typeof parsed !== 'object') continue;
+
+            const carriesAction = (parsed.action && parsed.action.type) ||
+                typeof parsed.type === 'string' ||
+                Array.isArray(parsed.actions);
+
+            if (carriesAction) fallback = group;
+        }
+
+        return fallback;
     }
 
     private repairJSON(json: string): string {
@@ -240,7 +275,7 @@ ${contextSection}${diffSection}
                 console.log('Gemini Response:', text);
 
                 // Extract JSON using balanced braces
-                const jsonStr = this.extractFirstJSON(text);
+                const jsonStr = this.extractActionJSON(text);
                 if (!jsonStr) {
                     throw new SyntaxError("No JSON found in response");
                 }
@@ -251,6 +286,11 @@ ${contextSection}${diffSection}
                 // Handle both old format (direct Action) and new format ({ thought, action })
                 const action = (parsed.action ? parsed.action : parsed) as Action;
                 const thought = parsed.thought || action.reason;
+
+                if (!Array.isArray(parsed.actions) && !action.type) {
+                    // Executing a typeless action burns an iteration and does nothing
+                    throw new SyntaxError("Parsed JSON has no action type");
+                }
 
                 if (runId) {
                     // Publish the specific "Chain of Thought" event
@@ -266,7 +306,7 @@ ${contextSection}${diffSection}
                     redis.publish('reliqa-events', JSON.stringify({ runId, type: 'step', action, timestamp: new Date() }));
                 }
 
-                return { thought: parsed.thought, actions: parsed.actions || [action] };
+                return { thought, actions: parsed.actions || [action] };
             } catch (error: any) {
                 console.error(`VisionBrain Error (Attempts left: ${retries}):`, error);
 

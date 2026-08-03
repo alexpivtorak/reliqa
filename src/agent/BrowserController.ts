@@ -8,6 +8,14 @@ import { ChaosController } from './ChaosController.js';
 // Redis Publisher for events
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
+// Browser side distiller kept in a plain .js file so the editor and node --check can
+// validate it. Loading it as text avoids both template literal escaping bugs and the
+// __name helper that tsx injects into serialized closures.
+const DISTILL_SOURCE = fs.readFileSync(
+    new URL('./browser/distillInteractiveElements.js', import.meta.url),
+    'utf8'
+);
+
 // Interface for DOM state tracking
 interface DOMSnapshot {
     url: string;
@@ -222,14 +230,10 @@ export class BrowserController {
      * - Traverses Shadow DOM
      * - Maps interactive elements to Coordinates
      * - Optimizes tokens (short keys)
+     * Returns null when the distiller could not run, so callers can tell
+     * "no context available" apart from "context with no elements".
      */
-    /**
-     * Advanced DOM Distiller (Level 3)
-     * - Traverses Shadow DOM
-     * - Maps interactive elements to Coordinates
-     * - Optimizes tokens (short keys)
-     */
-    async getPageContext(): Promise<string> {
+    async getPageContext(): Promise<string | null> {
         if (!this.page) throw new Error('Session not started');
 
         try {
@@ -241,116 +245,12 @@ export class BrowserController {
             ]);
             await this.page.waitForTimeout(300); // Wait for layouts/animations to settle
 
-            // WE MUST PASS A STRING TO EVALUATE TO AVOID TRANSPILER INJECTION (ReferenceError: __name)
-            // This function is serialized by Playwright, but tsx/esbuild might still inject things if passed as a closure.
-            // Using a string body is the safest way.
-            return await this.page.evaluate(`
-                (() => {
-                    // 1. Helper: Check visibility
-                    function isVisible(el) {
-                        const style = window.getComputedStyle(el);
-                        return style.display !== 'none' &&
-                            style.visibility !== 'hidden' &&
-                            style.opacity !== '0' &&
-                            el.getBoundingClientRect().width > 0;
-                    }
-
-                    // 2. Helper: Traverse Shadow DOM recursively
-                    function getInteractiveElements(root) {
-                        const elements = [];
-                        // Walker is faster than querySelectorAll for full tree
-                        const walker = document.createTreeWalker(root || document, NodeFilter.SHOW_ELEMENT);
-
-                        let node = walker.nextNode();
-                        while (node) {
-                            const el = node;
-
-                            // Check if interactive
-                            const tag = el.tagName.toLowerCase();
-                            const role = el.getAttribute('role');
-                            const isInteractive =
-                                ['input', 'textarea', 'select', 'button', 'a'].includes(tag) ||
-                                role === 'button' ||
-                                role === 'link' ||
-                                role === 'checkbox' ||
-                                role === 'menuitem' ||
-                                el.hasAttribute('onclick');
-
-                            if (isInteractive && isVisible(el)) {
-                                elements.push(el);
-                            }
-
-                            // Traverse Shadow Root
-                            if (el.shadowRoot) {
-                                elements.push(...getInteractiveElements(el.shadowRoot));
-                            }
-                            node = walker.nextNode();
-                        }
-                        return elements;
-                    }
-
-                    const allInteractive = getInteractiveElements(document);
-                    const distilled = [];
-
-                    // 3. Extract & Optimize
-                    for (const el of allInteractive) {
-                        const rect = el.getBoundingClientRect();
-                        const centerX = Math.round(rect.x + rect.width / 2);
-                        const centerY = Math.round(rect.y + rect.height / 2);
-
-                        // Skip elements off-screen (optimization)
-                        if (centerX < 0 || centerX > window.innerWidth || centerY < 0 || centerY > window.innerHeight) continue;
-
-                        // Occlusion check: verify if this element is covered by a modal/overlay
-                        const topEl = document.elementFromPoint(centerX, centerY);
-                        if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
-                            const topStyle = window.getComputedStyle(topEl);
-                            if (topStyle.pointerEvents !== 'none') {
-                                continue; // Skip obstructed elements (e.g., hidden under a popup/overlay)
-                            }
-                        }
-
-                        const item = {
-                            t: el.tagName.toLowerCase(), // tag
-                            c: [centerX, centerY] // center coordinates [x, y]
-                        };
-
-                        // Add useful attributes (if present)
-                        const text = el.textContent?.trim() || el.value;
-                        if (text && text.length < 50) item.txt = text; // limit text length
-
-                        if (el.id) item.id = el.id;
-
-                        // Keep the real attribute name so crawlers and the LLM emit working selectors
-                        const dataTest = el.getAttribute('data-test');
-                        const dataTestId = el.getAttribute('data-testid');
-                        if (dataTest) {
-                            item.dt = dataTest;
-                            item.da = 'data-test';
-                            // Escape \${} so the outer TS template literal does not interpolate
-                            item.s = '[data-test=\'' + dataTest + '\']';
-                        } else if (dataTestId) {
-                            item.dt = dataTestId;
-                            item.da = 'data-testid';
-                            item.s = '[data-testid=\'' + dataTestId + '\']';
-                        }
-
-                        const label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name');
-                        if (label) item.l = label; // l = label/name/placeholder
-
-                        distilled.push(item);
-                    }
-
-                    // 4. Return Top 300 elements
-                    return JSON.stringify({
-                        items: distilled.slice(0, 300),
-                        meta: { count: distilled.length, w: window.innerWidth, h: window.innerHeight }
-                    });
-                })()
-            `);
+            return await this.page.evaluate<string>(DISTILL_SOURCE);
         } catch (e) {
+            // Returning null keeps the prompt honest. An empty object would tell the model
+            // that context exists but holds no elements, which makes it invent selectors.
             console.error('Failed to distill DOM:', e);
-            return '{}';
+            return null;
         }
     }
 

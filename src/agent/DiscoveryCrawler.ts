@@ -110,18 +110,30 @@ export class DiscoveryCrawler {
                 const title = await browser.page?.title() || normalizedUrl;
                 const contextStr = await browser.getPageContext();
                 let interactives: string[] = [];
-                try {
-                    const parsedContext = JSON.parse(contextStr);
-                    interactives = (parsedContext.items || [])
-                        .map((el: any) => {
-                            if (el.s) return el.s;
-                            if (el.dt && el.da) return `[${el.da}='${el.dt}']`;
-                            if (el.id) return `#${el.id}`;
-                            return el.t;
-                        })
-                        .filter(Boolean)
-                        .slice(0, 5); // limit to top 5 selectors
-                } catch {}
+
+                if (contextStr === null) {
+                    // A silent failure here produces a test plan full of invented selectors
+                    const distillErr = `Could not read the DOM of ${normalizedUrl}. Selectors for this page will be missing.`;
+                    console.warn(distillErr);
+                    onEvent?.({ type: 'log', data: `⚠️ ${distillErr}` });
+                } else {
+                    try {
+                        const parsedContext = JSON.parse(contextStr);
+                        interactives = (parsedContext.items || [])
+                            .map((el: any) => {
+                                if (el.s) return el.s;
+                                if (el.dt && el.da) return `[${el.da}='${el.dt}']`;
+                                if (el.id) return `#${el.id}`;
+                                return el.t;
+                            })
+                            .filter(Boolean)
+                            .slice(0, 5); // limit to top 5 selectors
+                    } catch (err) {
+                        const parseErr = `Could not parse page context for ${normalizedUrl}: ${(err as Error).message}`;
+                        console.warn(parseErr);
+                        onEvent?.({ type: 'log', data: `⚠️ ${parseErr}` });
+                    }
+                }
 
                 const pageMsg = `📄 Crawled '${normalizedUrl}' - Found ${interactives.length} interactive fields (${interactives.join(', ') || 'none'}).`;
                 onEvent?.({ type: 'log', data: pageMsg });

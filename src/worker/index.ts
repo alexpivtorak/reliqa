@@ -263,6 +263,16 @@ const worker = new Worker('test-queue', async (job: Job) => {
 
                 const pageContext = await browser.getPageContext();
 
+                if (pageContext === null) {
+                    // Without this the agent silently falls back to guessing selectors
+                    redis.publish('reliqa-events', JSON.stringify({
+                        runId: testRunId,
+                        type: 'log',
+                        message: `⚠️ DOM distiller failed. Running screenshot only for this iteration, selectors may be unreliable.`,
+                        timestamp: new Date()
+                    }));
+                }
+
                 redis.publish('reliqa-events', JSON.stringify({
                     runId: testRunId,
                     type: 'log',
