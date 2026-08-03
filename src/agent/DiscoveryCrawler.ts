@@ -32,6 +32,27 @@ export function normalizeCrawlUrl(rawUrl: string): { url: string; rewritten: boo
     return { url: rawUrl, rewritten: false };
 }
 
+const MAX_SELECTORS_PER_NODE = 12;
+
+/**
+ * Turns a distilled element into a selector the test plan can rely on.
+ * Ranked so the sturdiest selectors survive the cap, and elements with no
+ * stable handle are dropped instead of padding the list with bare tag names.
+ */
+function toRankedSelector(el: any): { selector: string; rank: number } | null {
+    if (el.s) return { selector: el.s, rank: 0 };
+    if (el.dt && el.da) return { selector: `[${el.da}='${el.dt}']`, rank: 0 };
+    if (el.id) return { selector: `#${el.id}`, rank: 1 };
+
+    const text = typeof el.txt === 'string' ? el.txt.trim() : '';
+    const isTextTarget = el.t === 'a' || el.t === 'button';
+    if (isTextTarget && text && text.length <= 30 && !text.includes("'")) {
+        return { selector: `${el.t}:has-text('${text}')`, rank: 2 };
+    }
+
+    return null;
+}
+
 export class DiscoveryCrawler {
     async discover(
         url: string, 
@@ -119,15 +140,14 @@ export class DiscoveryCrawler {
                 } else {
                     try {
                         const parsedContext = JSON.parse(contextStr);
-                        interactives = (parsedContext.items || [])
-                            .map((el: any) => {
-                                if (el.s) return el.s;
-                                if (el.dt && el.da) return `[${el.da}='${el.dt}']`;
-                                if (el.id) return `#${el.id}`;
-                                return el.t;
-                            })
-                            .filter(Boolean)
-                            .slice(0, 5); // limit to top 5 selectors
+                        const ranked = (parsedContext.items || [])
+                            .map(toRankedSelector)
+                            .filter((entry: any): entry is { selector: string; rank: number } => entry !== null)
+                            .sort((a: any, b: any) => a.rank - b.rank)
+                            .map((entry: any) => entry.selector);
+
+                        // Sort is stable, so DOM order still decides within a rank
+                        interactives = [...new Set<string>(ranked)].slice(0, MAX_SELECTORS_PER_NODE);
                     } catch (err) {
                         const parseErr = `Could not parse page context for ${normalizedUrl}: ${(err as Error).message}`;
                         console.warn(parseErr);

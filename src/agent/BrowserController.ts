@@ -90,7 +90,13 @@ export class BrowserController {
         if (!this.page) throw new Error('Session not started');
         try {
             await this.page.goto(url, { waitUntil: 'domcontentloaded' });
-            await this.page.waitForLoadState('networkidle'); // Wait for initial network settling
+
+            // Settling is a nice to have, never a requirement. Bot challenges, chat widgets
+            // and analytics beacons hold connections open, so networkidle can never arrive
+            // on a page that is already perfectly usable.
+            await this.page
+                .waitForLoadState('networkidle', { timeout: 5000 })
+                .catch(() => {});
 
             // Auto-handle consent modals after navigation
             await this.handleConsentModals();

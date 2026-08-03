@@ -28,9 +28,12 @@
         if (el.hasAttribute('onclick')) return true;
         if (el.isContentEditable) return true;
 
-        // Custom components often carry only a test id and a click handler
+        // A focusable custom component is worth reporting, but a bare tabindex on a
+        // layout container is not. Require something that identifies it as well.
         const tabIndex = el.getAttribute('tabindex');
-        if (tabIndex !== null && tabIndex !== '-1') return true;
+        if (tabIndex !== null && tabIndex !== '-1') {
+            return Boolean(role || el.getAttribute('aria-label') || readTestId(el));
+        }
 
         return false;
     }
