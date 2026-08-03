@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, type FormEvent, type SVGProps } from 'react';
+import { Suspense, useId, useState, type FormEvent, type SVGProps } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 function SignInForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const errorId = useId();
     const returnTo = searchParams.get('returnTo') || '/';
     const safeReturnTo = returnTo.startsWith('/') ? returnTo : '/';
     const errorParam = searchParams.get('error');
@@ -74,12 +75,13 @@ function SignInForm() {
             <CardHeader className="text-center">
                 <CardTitle className="text-2xl">Sign in to Reliqa</CardTitle>
                 <CardDescription>
-                    Google for allowlisted humans. Email/password only for the seed agent account.
+                    Use Google for allowlisted accounts, or email and password for the agent account.
                 </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
                 {error && (
                     <div
+                        id={errorId}
                         role="alert"
                         data-testid="sign-in-error"
                         className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -92,6 +94,7 @@ function SignInForm() {
                     onSubmit={handlePasswordSignIn}
                     className="flex flex-col gap-4"
                     data-testid="password-sign-in-form"
+                    aria-describedby={error ? errorId : undefined}
                 >
                     <div className="flex flex-col gap-2">
                         <Label htmlFor="email">Email</Label>
@@ -99,13 +102,18 @@ function SignInForm() {
                             id="email"
                             name="email"
                             type="email"
+                            inputMode="email"
                             autoComplete="username"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
                             required
+                            autoFocus
                             value={email}
                             onChange={(event) => setEmail(event.target.value)}
                             disabled={isLoading}
+                            aria-invalid={error ? true : undefined}
                             data-testid="sign-in-email"
-                            placeholder="agent@reliqa.local"
                         />
                     </div>
                     <div className="flex flex-col gap-2">
@@ -120,6 +128,7 @@ function SignInForm() {
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
                             disabled={isLoading}
+                            aria-invalid={error ? true : undefined}
                             data-testid="sign-in-password"
                         />
                     </div>
@@ -128,9 +137,8 @@ function SignInForm() {
                         className="w-full"
                         disabled={isLoading}
                         data-testid="sign-in-password-submit"
-                        aria-label="Sign in with email and password"
                     >
-                        {isPasswordLoading ? 'Signing in…' : 'Sign in with password'}
+                        {isPasswordLoading ? 'Signing in…' : 'Sign in'}
                     </Button>
                 </form>
 
@@ -150,7 +158,6 @@ function SignInForm() {
                     onClick={handleGoogleSignIn}
                     disabled={isLoading}
                     data-testid="sign-in-google"
-                    aria-label="Sign in with Google"
                 >
                     <GoogleIcon aria-hidden="true" />
                     {isGoogleLoading ? 'Redirecting…' : 'Continue with Google'}

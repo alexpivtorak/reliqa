@@ -208,7 +208,7 @@
         "steps": [
             {
                 "name": "1. Password login",
-                "goal": "On the Reliqa sign-in page, enter email 'agent@reliqa.local' into the email field (data-testid sign-in-email) and password 'reliqa-agent-pass' into the password field (data-testid sign-in-password). Click the button 'Sign in with password' (data-testid sign-in-password-submit). Do not use Google. Verify we leave /sign-in and land on the dashboard."
+                "goal": "On the Reliqa sign-in page, enter email 'agent@reliqa.local' into the email field (data-testid sign-in-email) and password 'reliqa-agent-pass' into the password field (data-testid sign-in-password). Click the submit button labeled 'Sign in' (data-testid sign-in-password-submit). Do not use Google. Verify we leave /sign-in and land on the dashboard."
             },
             {
                 "name": "2. Open New Mission",
