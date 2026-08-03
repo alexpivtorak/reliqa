@@ -7,13 +7,21 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { DiscoveryCrawler } from '../agent/DiscoveryCrawler.js';
 import { db } from '../db/index.js';
 import { testRuns, testSteps } from '../db/schema.js';
-import { desc, eq, lt } from 'drizzle-orm';
+import { and, desc, eq, lt } from 'drizzle-orm';
 import { EventEmitter } from 'events';
 import { Redis } from 'ioredis';
 import { Queue } from 'bullmq';
 import { auth } from '../auth/index.js';
 import { ensureSeedUser } from '../scripts/ensure-seed-user.js';
 import { sessionMiddleware, requireAuth, type AuthVariables } from './auth-middleware.js';
+import {
+    getRunOwnerId,
+    loadOwnedRun,
+    parseRunId,
+    rememberRunOwner,
+    sessionUserId,
+} from './run-access.js';
+import { assertSafeTargetUrl, UnsafeTargetUrlError } from '../security/target-url.js';
 
 const app = new Hono<{ Variables: AuthVariables }>();
 
@@ -44,11 +52,11 @@ subscriber.on('message', (channel: string, message: string) => {
     }
 });
 
-import { serveStatic } from '@hono/node-server/serve-static';
 import path from 'path';
 import fs from 'fs';
 
 const webOrigin = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
+const RUN_VIDEO_RE = /^run-(\d+)\.webm$/;
 
 app.use(
     '/*',
@@ -67,15 +75,40 @@ app.on(['POST', 'GET'], '/api/auth/*', (c) => {
 
 app.use('*', sessionMiddleware);
 
-// Serve static videos
-// Note: In production this should be Nginx or S3, but for local dev this works.
+// Owned video serving: only run-<id>.webm, and only for the run owner
 const artifactsDir = path.resolve('./artifacts/videos');
 if (!fs.existsSync(artifactsDir)) fs.mkdirSync(artifactsDir, { recursive: true });
 
-app.use('/videos/*', requireAuth, serveStatic({
-    root: './artifacts/videos',
-    rewriteRequestPath: (path) => path.replace(/^\/videos/, ''),
-}));
+app.get('/videos/:filename', requireAuth, async (c) => {
+    const userId = sessionUserId(c);
+    if (userId === null) return c.json({ error: 'Unauthorized' }, 401);
+
+    const filename = c.req.param('filename');
+    if (!filename) return c.json({ error: 'Not found' }, 404);
+
+    const match = RUN_VIDEO_RE.exec(filename);
+    if (!match) return c.json({ error: 'Not found' }, 404);
+
+    const runId = Number(match[1]);
+    const run = await loadOwnedRun(runId, userId);
+    if (!run) return c.json({ error: 'Not found' }, 404);
+
+    const filePath = path.join(artifactsDir, filename);
+    if (!fs.existsSync(filePath)) return c.json({ error: 'Not found' }, 404);
+
+    const stat = fs.statSync(filePath);
+    const { Readable } = await import('stream');
+    const nodeStream = fs.createReadStream(filePath);
+    const webStream = Readable.toWeb(nodeStream) as ReadableStream;
+
+    return new Response(webStream, {
+        headers: {
+            'Content-Type': 'video/webm',
+            'Content-Length': String(stat.size),
+            'Cache-Control': 'private, max-age=3600',
+        },
+    });
+});
 
 app.get('/api/health', (c) => {
     return c.json({
@@ -137,52 +170,75 @@ app.get('/', (c) => {
 </html>`);
 });
 
-// List recent runs
+// List recent runs for the signed-in user only
 app.get('/api/runs', requireAuth, async (c) => {
-    const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!) : 10;
-    const cursor = c.req.query('cursor') ? parseInt(c.req.query('cursor')!) : undefined;
+    const userId = sessionUserId(c);
+    if (userId === null) return c.json({ error: 'Unauthorized' }, 401);
 
-    const query = db.select().from(testRuns).orderBy(desc(testRuns.id));
-
-    if (cursor) {
-        query.where(lt(testRuns.id, cursor));
+    const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : 10;
+    const cursorRaw = c.req.query('cursor');
+    const cursor = cursorRaw ? parseRunId(cursorRaw) : undefined;
+    if (cursorRaw && cursor === null) {
+        return c.json({ error: 'Invalid cursor' }, 400);
     }
 
-    const runs = await query.limit(limit);
+    const conditions = [eq(testRuns.userId, userId)];
+    if (cursor !== undefined && cursor !== null) {
+        conditions.push(lt(testRuns.id, cursor));
+    }
+
+    const runs = await db
+        .select()
+        .from(testRuns)
+        .where(and(...conditions))
+        .orderBy(desc(testRuns.id))
+        .limit(limit);
+
     const nextCursor = runs.length === limit ? runs[runs.length - 1].id : null;
 
     return c.json({ runs, nextCursor });
 });
 
-// Get run details
+// Get run details (owner only)
 app.get('/api/runs/:id', requireAuth, async (c) => {
-    const id = parseInt(c.req.param('id')!, 10);
-    const run = await db.select().from(testRuns).where(eq(testRuns.id, id)).execute();
+    const userId = sessionUserId(c);
+    if (userId === null) return c.json({ error: 'Unauthorized' }, 401);
 
-    if (run.length === 0) return c.json({ error: 'Run not found' }, 404);
+    const id = parseRunId(c.req.param('id')!);
+    if (id === null) return c.json({ error: 'Invalid run id' }, 400);
 
-    const steps = await db.select().from(testSteps).where(eq(testSteps.runId, id)).orderBy(testSteps.stepNumber).execute();
+    const run = await loadOwnedRun(id, userId);
+    if (!run) return c.json({ error: 'Run not found' }, 404);
 
-    return c.json({ ...run[0], steps });
+    const steps = await db
+        .select()
+        .from(testSteps)
+        .where(eq(testSteps.runId, id))
+        .orderBy(testSteps.stepNumber)
+        .execute();
+
+    return c.json({ ...run, steps });
 });
 
-// Stop a run
+// Stop a run (owner only)
 app.post('/api/runs/:id/stop', requireAuth, async (c) => {
-    const id = parseInt(c.req.param('id')!, 10);
-    const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id)).execute();
+    const userId = sessionUserId(c);
+    if (userId === null) return c.json({ error: 'Unauthorized' }, 401);
 
+    const id = parseRunId(c.req.param('id')!);
+    if (id === null) return c.json({ error: 'Invalid run id' }, 400);
+
+    const run = await loadOwnedRun(id, userId);
     if (!run) return c.json({ error: 'Run not found' }, 404);
     if (run.status !== 'running' && run.status !== 'queued') {
         return c.json({ error: 'Run is not in a stoppable state' }, 400);
     }
 
-    // Update status to 'stopping'
     await db.update(testRuns)
         .set({ status: 'stopping', updatedAt: new Date() })
         .where(eq(testRuns.id, id))
         .execute();
 
-    // Broadcast status change
     eventBus.emit('status', {
         runId: id,
         status: 'stopping',
@@ -200,30 +256,33 @@ app.post('/api/jobs', requireAuth, async (c) => {
 
     if (!url || !goal) return c.json({ error: 'Missing url or goal' }, 400);
 
-    const sessionUser = c.get('user');
-    if (!sessionUser) return c.json({ error: 'Unauthorized' }, 401);
+    const userId = sessionUserId(c);
+    if (userId === null) return c.json({ error: 'Unauthorized' }, 401);
 
-    const userId = Number(sessionUser.id);
-    if (!Number.isFinite(userId)) {
-        return c.json({ error: 'Invalid session user' }, 401);
+    let safeUrl: string;
+    try {
+        safeUrl = await assertSafeTargetUrl(url);
+    } catch (err) {
+        const message = err instanceof UnsafeTargetUrlError ? err.message : 'Unsafe target URL';
+        return c.json({ error: message }, 400);
     }
 
-    console.log(`Triggering Job: ${goal} on ${url} [${mode}] using ${model || 'default'}`);
+    console.log(`Triggering Job: ${goal} on ${safeUrl} [${mode}] using ${model || 'default'}`);
 
-    // Create Test Run record
     const [testRun] = await db.insert(testRuns).values({
         userId,
-        url: url,
+        url: safeUrl,
         goal: goal,
         status: 'queued',
         model: model || 'gemini-2.5-flash'
     }).returning();
 
+    rememberRunOwner(testRun.id, userId);
+
     const queue = new Queue('test-queue', { connection: redis as any });
 
-    // Push to Queue
     await queue.add('test-job', {
-        url,
+        url: safeUrl,
         goal,
         testRunId: testRun.id,
         userId,
@@ -339,9 +398,21 @@ app.get('/api/crawl-stream', requireAuth, async (c) => {
     c.header('Connection', 'keep-alive');
 
     return streamSSE(c, async (stream) => {
+        let safeUrl: string;
+        try {
+            safeUrl = await assertSafeTargetUrl(url);
+        } catch (err) {
+            const message = err instanceof UnsafeTargetUrlError ? err.message : 'Unsafe target URL';
+            await stream.writeSSE({
+                data: JSON.stringify({ error: message }),
+                event: 'error'
+            });
+            return;
+        }
+
         const crawler = new DiscoveryCrawler();
         try {
-            const result = await crawler.discover(url, depth, async (event) => {
+            const result = await crawler.discover(safeUrl, depth, async (event) => {
                 await stream.writeSSE({
                     data: JSON.stringify(event.data),
                     event: event.type
@@ -372,9 +443,12 @@ app.get('/api/crawl-stream', requireAuth, async (c) => {
     });
 });
 
-// Global Stream for Dashboard
+// Global Stream for Dashboard (owner-scoped events only)
 app.get('/api/stream/global', requireAuth, async (c) => {
-    console.log(`🔌 Client connected to GLOBAL stream`);
+    const userId = sessionUserId(c);
+    if (userId === null) return c.json({ error: 'Unauthorized' }, 401);
+
+    console.log(`🔌 Client connected to GLOBAL stream (user ${userId})`);
 
     c.header('Content-Type', 'text/event-stream; charset=utf-8');
     c.header('Cache-Control', 'no-cache');
@@ -382,6 +456,7 @@ app.get('/api/stream/global', requireAuth, async (c) => {
 
     return streamSSE(c, async (stream) => {
         const onRunCreated = async (data: any) => {
+            if (data.run?.userId !== userId) return;
             await stream.writeSSE({
                 data: JSON.stringify(data.run),
                 event: 'run-created',
@@ -389,6 +464,8 @@ app.get('/api/stream/global', requireAuth, async (c) => {
         };
 
         const onStatus = async (data: any) => {
+            const ownerId = await getRunOwnerId(data.runId);
+            if (ownerId !== userId) return;
             await stream.writeSSE({
                 data: JSON.stringify({
                     runId: data.runId,
@@ -403,7 +480,6 @@ app.get('/api/stream/global', requireAuth, async (c) => {
         eventBus.on('run-created', onRunCreated);
         eventBus.on('status', onStatus);
 
-        // Block until the client disconnects — no polling, purely event-driven.
         await new Promise<void>((resolve) => {
             const cleanup = () => {
                 console.log(`🔌 Client disconnected from GLOBAL stream`);
@@ -417,10 +493,18 @@ app.get('/api/stream/global', requireAuth, async (c) => {
     });
 });
 
-// SSE Endpoint for Live Streaming (Specific Run)
+// SSE Endpoint for Live Streaming (Specific Run, owner only)
 app.get('/api/stream/:id', requireAuth, async (c) => {
+    const userId = sessionUserId(c);
+    if (userId === null) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id')!;
-    const runId = parseInt(id, 10);
+    const runId = parseRunId(id);
+    if (runId === null) return c.json({ error: 'Invalid run id' }, 400);
+
+    const run = await loadOwnedRun(runId, userId);
+    if (!run) return c.json({ error: 'Run not found' }, 404);
+
     console.log(`🔌 Client connected to stream for run ${id}`);
 
     c.header('Content-Type', 'text/event-stream; charset=utf-8');
@@ -428,7 +512,6 @@ app.get('/api/stream/:id', requireAuth, async (c) => {
     c.header('Connection', 'keep-alive');
 
     return streamSSE(c, async (stream) => {
-        // Send initial connection message
         await stream.writeSSE({
             data: JSON.stringify({ type: 'connected', message: `Listening for events on run ${id}` }),
             event: 'status',
@@ -460,7 +543,6 @@ app.get('/api/stream/:id', requireAuth, async (c) => {
         eventBus.on('frame', onFrame);
         eventBus.on('status', onStatus);
 
-        // Block until the client disconnects — no polling, purely event-driven.
         await new Promise<void>((resolve) => {
             const cleanup = () => {
                 console.log(`🔌 Client disconnected from stream ${id}`);

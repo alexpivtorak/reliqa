@@ -74,7 +74,7 @@ const phases = [
 export default function RoadmapPage() {
     return (
         <div className="flex flex-col items-center p-8 md:p-24">
-            <div className="w-full max-w-5xl space-y-8">
+            <div className="w-full max-w-7xl space-y-8">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
                         Reliqa Roadmap

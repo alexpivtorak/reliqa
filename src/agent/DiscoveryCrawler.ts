@@ -1,4 +1,5 @@
 import { BrowserController } from './BrowserController.js';
+import { classifyTestId, familySelector } from './volatileIdentifiers.js';
 
 export interface DiscoveredNode {
     id: string;
@@ -19,6 +20,11 @@ export interface DiscoveredEdge {
 
 /** Local Next.js / Vite apps are usually HTTP. HTTPS on localhost often causes ERR_SSL_PROTOCOL_ERROR. */
 export function normalizeCrawlUrl(rawUrl: string): { url: string; rewritten: boolean } {
+    // Only rewrite when private targets are explicitly allowed (local self-tests).
+    if (process.env.ALLOW_PRIVATE_TARGETS !== 'true') {
+        return { url: rawUrl, rewritten: false };
+    }
+
     try {
         const parsed = new URL(rawUrl);
         const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
@@ -39,10 +45,22 @@ const MAX_SELECTORS_PER_NODE = 12;
  * Ranked so the sturdiest selectors survive the cap, and elements with no
  * stable handle are dropped instead of padding the list with bare tag names.
  */
-function toRankedSelector(el: any): { selector: string; rank: number } | null {
+export function toRankedSelector(el: any): { selector: string; rank: number } | null {
+    if (el.dt && el.da) {
+        const shape = classifyTestId(el.dt);
+
+        // A bare generated id says nothing a plan can rely on, so the element is dropped
+        if (shape.kind === 'volatile') return null;
+        if (shape.kind === 'family') {
+            return { selector: familySelector(el.da, shape.prefix), rank: 0.5 };
+        }
+    }
+
     if (el.s) return { selector: el.s, rank: 0 };
     if (el.dt && el.da) return { selector: `[${el.da}='${el.dt}']`, rank: 0 };
-    if (el.id) return { selector: `#${el.id}`, rank: 1 };
+    // A prefix match on id is too vague to be worth it, so ids carrying a generated
+    // segment are skipped in favour of text
+    if (el.id && classifyTestId(el.id).kind === 'stable') return { selector: `#${el.id}`, rank: 1 };
 
     const text = typeof el.txt === 'string' ? el.txt.trim() : '';
     const isTextTarget = el.t === 'a' || el.t === 'button';

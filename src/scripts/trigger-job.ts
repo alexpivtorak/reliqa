@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
 import { db } from '../db/index.js';
 import { testRuns } from '../db/schema.js';
-import { ensureLocalDevUser } from './ensure-local-user.js';
+import { resolveRunOwner } from './ensure-local-user.js';
 import dotenv from 'dotenv';
 import { Redis } from 'ioredis';
 
@@ -13,19 +13,39 @@ const connection = {
 
 const testQueue = new Queue('test-queue', { connection });
 
+function parseArgs(argv: string[]) {
+    let asEmail: string | undefined;
+    const positional: string[] = [];
+
+    for (let i = 0; i < argv.length; i++) {
+        const arg = argv[i];
+        if (arg === '--as') {
+            asEmail = argv[++i];
+            if (!asEmail) {
+                throw new Error('Missing value for --as <email>');
+            }
+            continue;
+        }
+        positional.push(arg);
+    }
+
+    return { asEmail, positional };
+}
+
 async function main() {
-    const url = process.argv[2];
-    const goal = process.argv[3];
-    const mode = process.argv[4] || 'standard';
+    const { asEmail, positional } = parseArgs(process.argv.slice(2));
+    const url = positional[0];
+    const goal = positional[1];
+    const mode = positional[2] || 'standard';
 
     if (!url || !goal) {
-        console.error('Usage: npm run trigger <url> <goal> [mode]');
+        console.error('Usage: pnpm run trigger <url> <goal> [mode] [--as email]');
         process.exit(1);
     }
 
     console.log(`Triggering Job: ${goal} on ${url} [${mode}]`);
 
-    const user = await ensureLocalDevUser();
+    const user = await resolveRunOwner(asEmail);
 
     const [testRun] = await db.insert(testRuns).values({
         userId: user.id,
@@ -50,8 +70,11 @@ async function main() {
     }));
     redis.disconnect();
 
-    console.log(`Job queued! TestRun ID: ${testRun.id}`);
+    console.log(`Job queued! TestRun ID: ${testRun.id} (owner: ${user.email})`);
     process.exit(0);
 }
 
-main();
+main().catch((err) => {
+    console.error(err.message || err);
+    process.exit(1);
+});

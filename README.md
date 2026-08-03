@@ -56,6 +56,14 @@ AUTH_ALLOWED_EMAILS=you@example.com
 AUTH_SEED_EMAIL=agent@reliqa.local
 AUTH_SEED_PASSWORD=reliqa-agent-pass
 AUTH_SEED_NAME=Reliqa Agent
+
+# Local self-tests: allow crawl/jobs against localhost and private IPs.
+# Leave unset (or false) in production.
+ALLOW_PRIVATE_TARGETS=true
+
+# Optional: attribute CLI-triggered runs to your Google user so they show in the dashboard.
+# Sign in once first so the user row exists. Or pass --as you@example.com to trigger scripts.
+# LOCAL_DEV_USER_EMAIL=you@example.com
 ```
 
 For Google sign-in, create an OAuth 2.0 Client ID in [Google Cloud Console](https://console.cloud.google.com/apis/credentials). Set the authorized redirect URI to `http://localhost:3000/api/auth/callback/google`. Put your email in `AUTH_ALLOWED_EMAILS` (comma-separated) so only approved accounts can sign up with Google.
@@ -86,15 +94,20 @@ Open the Web Dashboard and sign in (Google allowlisted account, or the seed pass
 ---
 
 ### 4. Trigger a Test
-In another terminal, queue a job via the CLI (uses a local dev user in the DB; does not require a browser Google session):
+In another terminal, queue a job via the CLI (uses a local owner in the DB; does not require a browser Google session):
 
 ```bash
 # Standard Goal-Oriented Test
 pnpm run trigger https://www.google.com "Search for entropy"
 
+# Attribute the run to your dashboard user (must already exist)
+pnpm run trigger https://www.google.com "Search for entropy" --as you@example.com
+
 # Chaos Mode (Monkey Testing)
 pnpm run trigger https://example.com "Crash this site" chaos
 ```
+
+Set `LOCAL_DEV_USER_EMAIL` to your allowlisted Google email if you want CLI runs to appear in your dashboard without `--as` each time.
 
 ### 5. Multi-Step Flows (E2E Tests)
 Define complex flows in `tests.json` (root directory). The repo ships with 10 ready-to-run flows (SauceDemo, BrowserStack Demo, DemoQA, Parabank, Google, Vivino, Hacker News, and more) — run `pnpm run trigger:flow` with no arguments to list them all.

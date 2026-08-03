@@ -267,6 +267,7 @@ export default function RunPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="gemini-2.5-flash">⚡ Gemini 2.5 Flash (Recommended)</SelectItem>
+                                            <SelectItem value="gemini-3.6-flash">🚀 Gemini 3.6 Flash (Newest)</SelectItem>
                                             <SelectItem value="gemini-2.5-pro">🧠 Gemini 2.5 Pro (High Reasoning)</SelectItem>
                                             <SelectItem value="gemini-2.5-flash-lite">🏎️ Gemini 2.5 Flash Lite (Fastest)</SelectItem>
                                         </SelectContent>

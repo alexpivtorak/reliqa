@@ -62,10 +62,10 @@ interface TestFlowProposal {
 
 const CustomSitemapNode = ({ data }: any) => {
     return (
-        <div className={`w-36 border p-2 rounded-lg bg-black/80 text-foreground shadow-md transition-all ${data.isActive ? 'border-purple-500/50' : 'border-muted opacity-40'}`}>
-            <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-purple-500" />
-            <div className="flex justify-between items-center mb-1">
-                <span className="text-[7px] font-mono text-muted-foreground truncate w-24">
+        <div className={`w-44 border p-2.5 rounded-lg bg-zinc-950 text-zinc-100 shadow-md transition-all ${data.isActive ? 'border-purple-500/50' : 'border-muted opacity-40'}`}>
+            <Handle type="target" position={Position.Left} className="w-2.5 h-2.5 !bg-purple-500" />
+            <div className="flex justify-between items-center mb-1.5 gap-1">
+                <span className="text-[10px] font-mono text-zinc-400 truncate min-w-0 flex-1">
                     {data.url}
                 </span>
                 <input
@@ -75,12 +75,13 @@ const CustomSitemapNode = ({ data }: any) => {
                         e.stopPropagation();
                         data.onToggle(data.id);
                     }}
-                    className="w-3 h-3 accent-purple-500 cursor-pointer"
+                    className="w-3.5 h-3.5 accent-purple-500 cursor-pointer shrink-0"
+                    aria-label={`Toggle ${data.title}`}
                 />
             </div>
-            <h4 className="text-[9px] font-bold truncate">{data.title}</h4>
-            <div className="flex justify-between items-center mt-2">
-                <span className="text-[7px] text-purple-400">
+            <h4 className="text-xs font-bold truncate">{data.title}</h4>
+            <div className="flex justify-between items-center mt-2 gap-1">
+                <span className="text-[10px] text-purple-400">
                     {data.interactives?.length || 0} fields
                 </span>
                 <button
@@ -89,12 +90,12 @@ const CustomSitemapNode = ({ data }: any) => {
                         e.stopPropagation();
                         data.onEdit(data.id);
                     }}
-                    className="text-[7px] bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 px-1 py-0.5 rounded font-mono"
+                    className="text-[10px] bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded font-mono"
                 >
                     EDIT
                 </button>
             </div>
-            <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-purple-500" />
+            <Handle type="source" position={Position.Right} className="w-2.5 h-2.5 !bg-purple-500" />
         </div>
     );
 };
@@ -112,6 +113,7 @@ export default function NewMission() {
     const [isCrawling, setIsCrawling] = useState(false);
     const [progress, setProgress] = useState(0);
     const [logs, setLogs] = useState<string[]>([]);
+    const logsContainerRef = useRef<HTMLDivElement>(null);
     const [showSitemap, setShowSitemap] = useState(false);
     const [selectedNode, setSelectedNode] = useState<StateNode | null>(null);
     const [showNodeDialog, setShowNodeDialog] = useState(false);
@@ -309,6 +311,12 @@ PHASE 3: FINISH
             console.error("Failed to serialize sitemap graph:", err);
         }
     }, [nodes, sitemapEdges]);
+
+    useEffect(() => {
+        const container = logsContainerRef.current;
+        if (!container) return;
+        container.scrollTop = container.scrollHeight;
+    }, [logs]);
 
     // Handle user modifying raw JSON → nodes (guarded to prevent loop back into useEffect)
     const handleJsonChange = (val: string) => {
@@ -617,7 +625,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
     })), [sitemapEdges]);
 
     return (
-        <div className="flex flex-col items-center p-6 md:p-12 space-y-8 max-w-5xl mx-auto w-full">
+        <div className="flex flex-col items-center p-6 md:p-12 space-y-8 max-w-7xl mx-auto w-full">
             <Card className="w-full border-muted-foreground/20 bg-card/60 backdrop-blur">
                 <CardHeader>
                     <CardTitle className="text-xl flex items-center gap-2">
@@ -640,7 +648,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                     onChange={(e) => setUrl(e.target.value)}
                                     required
                                 />
-                                <p className="text-[11px] text-muted-foreground">
+                                <p className="text-xs text-muted-foreground">
                                     Local apps need <code className="bg-muted px-1 rounded">http://</code>, not https.
                                 </p>
                             </div>
@@ -654,6 +662,9 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                     <SelectContent>
                                         <SelectItem value="gemini-2.5-flash">
                                             ⚡ Gemini 2.5 Flash (Recommended)
+                                        </SelectItem>
+                                        <SelectItem value="gemini-3.6-flash">
+                                            🚀 Gemini 3.6 Flash (Newest)
                                         </SelectItem>
                                         <SelectItem value="gemini-2.5-pro">
                                             🧠 Gemini 2.5 Pro (High Reasoning)
@@ -669,28 +680,30 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                         {/* Strategy Toggle */}
                         <div className="space-y-3">
                             <Label>Testing Strategy</Label>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-4" role="group" aria-label="Testing strategy">
                                 <button
                                     type="button"
+                                    aria-pressed={strategy === "manual"}
                                     className={`flex items-center justify-center gap-2 p-4 border-2 rounded-xl text-sm font-semibold transition-all ${
                                         strategy === "manual"
-                                            ? "border-purple-500 bg-purple-500/5 text-purple-300"
+                                            ? "border-purple-600 bg-purple-500/10 text-purple-700 dark:text-purple-300"
                                             : "border-muted hover:border-muted-foreground/30 text-muted-foreground"
                                     }`}
                                     onClick={() => setStrategy("manual")}
                                 >
-                                    <Keyboard className="w-4 h-4" /> Manual Goal / Prompt
+                                    <Keyboard className="w-4 h-4" aria-hidden="true" /> Manual Goal / Prompt
                                 </button>
                                 <button
                                     type="button"
+                                    aria-pressed={strategy === "autonomous"}
                                     className={`flex items-center justify-center gap-2 p-4 border-2 rounded-xl text-sm font-semibold transition-all ${
                                         strategy === "autonomous"
-                                            ? "border-purple-500 bg-purple-500/5 text-purple-300"
+                                            ? "border-purple-600 bg-purple-500/10 text-purple-700 dark:text-purple-300"
                                             : "border-muted hover:border-muted-foreground/30 text-muted-foreground"
                                     }`}
                                     onClick={() => setStrategy("autonomous")}
                                 >
-                                    <Compass className="w-4 h-4" /> Autonomous Discovery
+                                    <Compass className="w-4 h-4" aria-hidden="true" /> Autonomous Discovery
                                 </button>
                             </div>
                         </div>
@@ -698,21 +711,22 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                         {/* Strategy A: Autonomous Discovery Block */}
                         {strategy === "autonomous" && (
                             <div className="border border-purple-500/20 bg-purple-500/5 rounded-xl p-6 space-y-6 animate-in fade-in slide-in-from-top duration-300">
-                                <div className="flex items-center justify-between">
-                                    <div className="space-y-0.5">
-                                        <h3 className="text-sm font-bold flex items-center gap-1.5">
-                                            <Activity className="w-4 h-4 text-purple-400" /> Explore Application Sitemap
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="space-y-1">
+                                        <h3 className="text-base font-bold flex items-center gap-1.5">
+                                            <Activity className="w-4 h-4 text-purple-500" aria-hidden="true" /> Explore Application Sitemap
                                         </h3>
-                                        <p className="text-xs text-muted-foreground">
+                                        <p className="text-sm text-muted-foreground">
                                             Find all paths, pages, and fields automatically to let the AI write the goal.
                                         </p>
                                     </div>
                                     <Button
                                         type="button"
                                         size="sm"
-                                        className="bg-purple-600 hover:bg-purple-500"
+                                        className="bg-purple-600 hover:bg-purple-500 shrink-0"
                                         onClick={startDiscovery}
                                         disabled={isCrawling}
+                                        aria-busy={isCrawling}
                                     >
                                         {isCrawling ? "Scanning..." : "🔍 Scan Application"}
                                     </Button>
@@ -721,13 +735,25 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                 {/* Progress + crawl logs stay visible after scan finishes */}
                                 {(isCrawling || logs.length > 0) && (
                                     <div className="space-y-3">
-                                        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                                        <div
+                                            className="w-full bg-muted rounded-full h-2 overflow-hidden"
+                                            role="progressbar"
+                                            aria-valuenow={Math.round(progress)}
+                                            aria-valuemin={0}
+                                            aria-valuemax={100}
+                                            aria-label="Crawl progress"
+                                        >
                                             <div
                                                 className="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-300"
                                                 style={{ width: `${progress}%` }}
                                             ></div>
                                         </div>
-                                        <div className="bg-black/50 border rounded-lg p-3 font-mono text-[10px] text-muted-foreground h-32 overflow-y-auto space-y-1">
+                                        <div
+                                            ref={logsContainerRef}
+                                            className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 font-mono text-sm leading-relaxed text-zinc-200 h-56 max-h-[50vh] overflow-y-auto space-y-1.5"
+                                            aria-live="polite"
+                                            aria-label="Crawl logs"
+                                        >
                                             {logs.map((log, idx) => (
                                                 <div key={idx} className={log?.startsWith("🎉") ? "text-green-400" : log?.startsWith("❌") || log?.startsWith("⚠️") ? "text-red-400" : log?.startsWith("👉") ? "text-blue-400" : ""}>
                                                     {log}
@@ -743,8 +769,8 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                         {/* Dynamic Node Graph Layout */}
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             {/* Live Flow Canvas (React Flow) */}
-                                            <div className="md:col-span-2 border border-muted/50 rounded-xl bg-black/60 p-1 relative h-[320px] overflow-hidden flex flex-col shadow-inner">
-                                                <div className="absolute top-2 left-2 z-20 bg-black/80 border border-purple-500/20 text-[9px] text-purple-300 font-semibold px-2 py-0.5 rounded-full select-none">
+                                            <div className="md:col-span-2 border border-muted/50 rounded-xl bg-zinc-950 p-1 relative h-[360px] overflow-hidden flex flex-col shadow-inner">
+                                                <div className="absolute top-2 left-2 z-20 bg-black/80 border border-purple-500/20 text-xs text-purple-300 font-semibold px-2.5 py-1 rounded-full select-none">
                                                     Live Flow Canvas
                                                 </div>
                                                 <ReactFlowProvider>
@@ -753,26 +779,30 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                                         edges={reactFlowEdges}
                                                         nodeTypes={nodeTypes}
                                                         fitView
+                                                        colorMode="dark"
                                                         className="w-full h-full"
                                                     >
                                                         <Background color="#8b5cf6" gap={16} size={1} style={{ opacity: 0.15 }} />
-                                                        <Controls className="!bg-black !border-muted/30 !text-foreground !fill-foreground" />
+                                                        <Controls
+                                                            className="!m-3 !rounded-md !overflow-hidden !border !border-zinc-600 !shadow-lg"
+                                                            showInteractive={false}
+                                                        />
                                                     </ReactFlow>
                                                 </ReactFlowProvider>
                                             </div>
 
                                             {/* JSON Graph Schema Editor */}
-                                            <div className="md:col-span-1 border border-muted/50 rounded-xl bg-black/40 p-4 flex flex-col space-y-2 h-[320px]">
+                                            <div className="md:col-span-1 border border-muted/50 rounded-xl bg-zinc-950 p-4 flex flex-col space-y-2 h-[360px]">
                                                 <div className="flex justify-between items-center">
-                                                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 select-none">
+                                                    <Label className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5 select-none">
                                                         <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> JSON Graph Schema
                                                     </Label>
                                                     {jsonError ? (
-                                                        <Badge variant="destructive" className="text-[8px] px-1.5 py-0.5 leading-none">
+                                                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 leading-none">
                                                             Syntax Error
                                                         </Badge>
                                                     ) : (
-                                                        <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[8px] px-1.5 py-0.5 leading-none">
+                                                        <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] px-1.5 py-0.5 leading-none">
                                                             Sync OK
                                                         </Badge>
                                                     )}
@@ -780,13 +810,14 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                                 <textarea
                                                     value={jsonText}
                                                     onChange={(e) => handleJsonChange(e.target.value)}
-                                                    className={`flex-1 w-full bg-black/60 border rounded-lg p-2.5 font-mono text-[9px] leading-relaxed resize-none focus:outline-none focus:ring-1 transition-all ${
-                                                        jsonError ? 'border-red-500/40 focus:ring-red-500/30' : 'border-muted/40 focus:ring-purple-500/40'
+                                                    className={`flex-1 w-full bg-zinc-900 border rounded-lg p-2.5 font-mono text-xs leading-relaxed text-zinc-100 placeholder:text-zinc-500 resize-none focus:outline-none focus:ring-1 transition-all ${
+                                                        jsonError ? 'border-red-500/40 focus:ring-red-500/30' : 'border-zinc-700 focus:ring-purple-500/40'
                                                     }`}
                                                     placeholder="Type sitemap JSON here..."
+                                                    aria-label="JSON graph schema"
                                                 />
                                                 {jsonError && (
-                                                    <p className="text-[8px] text-red-400 font-mono line-clamp-1">
+                                                    <p className="text-xs text-red-400 font-mono line-clamp-2">
                                                         {jsonError}
                                                     </p>
                                                 )}
@@ -794,36 +825,39 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                         </div>
 
                                         {/* Proposals selection */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4" role="listbox" aria-label="Proposed test flows">
                                             {flows.map((flow) => (
-                                                <div
+                                                <button
+                                                    type="button"
                                                     key={flow.id}
-                                                    className={`border p-3.5 rounded-xl cursor-pointer transition-all ${
+                                                    role="option"
+                                                    aria-selected={activeFlowId === flow.id}
+                                                    className={`border p-3.5 rounded-xl text-left cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${
                                                         activeFlowId === flow.id
-                                                            ? "border-purple-500 bg-purple-500/5"
+                                                            ? "border-purple-600 bg-purple-500/10"
                                                             : "border-muted bg-card/30 hover:border-muted-foreground/20"
                                                     }`}
                                                     onClick={() => setActiveFlowId(flow.id)}
                                                 >
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <h4 className="font-bold text-xs text-foreground">
+                                                    <div className="flex justify-between items-center mb-1 gap-2">
+                                                        <h4 className="font-bold text-sm text-foreground">
                                                             {flow.name}
                                                         </h4>
-                                                        <span className="text-[10px] text-muted-foreground">
+                                                        <span className="text-xs text-muted-foreground shrink-0">
                                                             {flow.steps.length} steps
                                                         </span>
                                                     </div>
-                                                    <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">
+                                                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
                                                         {flow.description}
                                                     </p>
-                                                </div>
+                                                </button>
                                             ))}
                                         </div>
 
                                         {/* Analyze Button */}
                                         <Button
                                             type="button"
-                                            className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-xs font-bold gap-1.5"
+                                            className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-sm font-bold gap-1.5"
                                             onClick={handleGenerateGoal}
                                             disabled={isGeneratingGoal}
                                         >
@@ -837,8 +871,8 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
 
                         {/* Step 3: Goal Prompt Area */}
                         <div className="space-y-2">
-                            <Label htmlFor="goal" className="font-bold flex items-center gap-1.5">
-                                <ListTodo className="w-4 h-4 text-purple-400" /> Mission Goal / Prompt
+                            <Label htmlFor="goal" className="font-bold text-sm flex items-center gap-1.5">
+                                <ListTodo className="w-4 h-4 text-purple-500" aria-hidden="true" /> Mission Goal / Prompt
                             </Label>
                             <Textarea
                                 id="goal"
@@ -852,49 +886,52 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
 
                         {/* Standard Controls */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="flex items-center space-x-2 border p-3.5 rounded-xl bg-muted/40">
+                            <div className="flex items-start gap-3 border border-border p-4 rounded-xl bg-muted/40">
                                 <Switch
                                     id="chaos-mode"
                                     checked={isChaos}
                                     onCheckedChange={setIsChaos}
+                                    className="mt-0.5"
                                 />
-                                <div className="flex-1">
-                                    <Label htmlFor="chaos-mode" className="font-bold text-xs">
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                    <Label htmlFor="chaos-mode" className="font-bold text-sm">
                                         Chaos Mode 😈
                                     </Label>
-                                    <p className="text-[9px] text-muted-foreground">
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
                                         Inject packet loss, latency, and inputs fuzzing.
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center space-x-2 border p-3.5 rounded-xl bg-muted/40">
+                            <div className="flex items-start gap-3 border border-border p-4 rounded-xl bg-muted/40">
                                 <Switch
                                     id="headless-mode"
                                     checked={headless}
                                     onCheckedChange={setHeadless}
+                                    className="mt-0.5"
                                 />
-                                <div className="flex-1">
-                                    <Label htmlFor="headless-mode" className="font-bold text-xs">
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                    <Label htmlFor="headless-mode" className="font-bold text-sm">
                                         Headless Mode 👻
                                     </Label>
-                                    <p className="text-[9px] text-muted-foreground">
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
                                         Run browser in background. Disable to watch live.
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center space-x-2 border p-3.5 rounded-xl bg-muted/40">
+                            <div className="flex items-start gap-3 border border-border p-4 rounded-xl bg-muted/40">
                                 <Switch
                                     id="disable-cache"
                                     checked={disableCache}
                                     onCheckedChange={setDisableCache}
+                                    className="mt-0.5"
                                 />
-                                <div className="flex-1">
-                                    <Label htmlFor="disable-cache" className="font-bold text-xs">
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                    <Label htmlFor="disable-cache" className="font-bold text-sm">
                                         Disable Cache 🧠
                                     </Label>
-                                    <p className="text-[9px] text-muted-foreground">
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
                                         Force AI reasoning on every single step.
                                     </p>
                                 </div>
@@ -905,7 +942,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                             <ChaosControlPanel onChange={setChaosProfile} />
                         )}
 
-                        <Button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 py-6 text-sm font-bold" disabled={isLoading}>
+                        <Button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 py-6 text-sm font-bold" disabled={isLoading} aria-busy={isLoading}>
                             {isLoading ? "Deploying Agent..." : "🚀 Launch Mission"}
                         </Button>
                     </form>
@@ -917,12 +954,12 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                 <Dialog open={showNodeDialog} onOpenChange={setShowNodeDialog}>
                     <DialogContent className="border-muted bg-card/95 backdrop-blur text-foreground">
                         <DialogHeader>
-                            <DialogTitle className="text-sm font-bold">Edit Node: {selectedNode.title}</DialogTitle>
-                            <DialogDescription className="text-[10px] text-muted-foreground">
+                            <DialogTitle className="text-base font-bold">Edit Node: {selectedNode.title}</DialogTitle>
+                            <DialogDescription className="text-xs text-muted-foreground">
                                 Path: {selectedNode.url}
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="space-y-4 py-3 text-xs">
+                        <div className="space-y-4 py-3 text-sm">
                             <div className="space-y-1.5">
                                 <Label htmlFor="node-title">Node Title</Label>
                                 <Input
@@ -936,9 +973,9 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
 
                             <div className="space-y-1.5">
                                 <Label>Interactive Element Selectors Found</Label>
-                                <div className="border border-muted/50 rounded-lg p-2.5 bg-black/25 space-y-0.5">
+                                <div className="border border-muted/50 rounded-lg p-2.5 bg-black/25 space-y-0.5 max-h-40 overflow-y-auto">
                                     {selectedNode.interactives.map((item, idx) => (
-                                        <div key={idx} className="font-mono text-[10px] text-purple-400">
+                                        <div key={idx} className="font-mono text-xs text-purple-400">
                                             {item}
                                         </div>
                                     ))}
@@ -971,7 +1008,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
                                     <Label htmlFor="node-active" className="font-bold">
                                         Enable State Testing
                                     </Label>
-                                    <p className="text-[9px] text-muted-foreground">
+                                    <p className="text-xs text-muted-foreground">
                                         Include this page/node in the generated E2E flow.
                                     </p>
                                 </div>

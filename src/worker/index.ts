@@ -5,6 +5,8 @@ import { Observer } from '../agent/Observer.js';
 import { HistoryManager } from '../agent/HistoryManager.js';
 import { ActionCache } from '../agent/ActionCache.js';
 import { Optimizer } from '../agent/Optimizer.js';
+import { RecoveryGate } from '../agent/RecoveryGate.js';
+import { getStepBudget, countPlannedSteps } from '../agent/StepBudget.js';
 import { db } from '../db/index.js';
 import { testRuns, issues } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -13,6 +15,7 @@ import { Action, TestFlow } from '../agent/types.js';
 import fs from 'fs';
 import path from 'path';
 import { Redis } from 'ioredis';
+import { assertSafeTargetUrl, UnsafeTargetUrlError } from '../security/target-url.js';
 
 dotenv.config();
 
@@ -55,11 +58,22 @@ const worker = new Worker('test-queue', async (job: Job) => {
     const brain = new VisionBrain(undefined, model); // Pass model here
     const observer = new Observer();
     const actionCache = new ActionCache();
+    const recovery = new RecoveryGate();
 
     try {
+        let safeUrl: string;
+        try {
+            safeUrl = await assertSafeTargetUrl(url);
+        } catch (err) {
+            const message = err instanceof UnsafeTargetUrlError
+                ? err.message
+                : 'Unsafe target URL';
+            throw new Error(`Blocked unsafe target URL: ${message}`);
+        }
+
         await browser.launch(headless !== false);
         await browser.startSession(job.id || 'unknown');
-        await browser.navigate(url);
+        await browser.navigate(safeUrl);
 
         // Initial snapshot for DOM Diffing
         await browser.captureDOMSnapshot();
@@ -120,15 +134,30 @@ const worker = new Worker('test-queue', async (job: Job) => {
 
             // Reset observer for new step
             observer.resetForNewStep();
+            recovery.resetForStep(currentStep.name);
 
             let stepSuccess = false;
             let stepLoopCount = 0;
-            const MAX_STEPS_PER_GOAL = mode === 'chaos' ? 50 : 25;
+            const MAX_STEPS_PER_GOAL = getStepBudget(currentStep.goal, mode);
+
+            const plannedSteps = countPlannedSteps(currentStep.goal);
+            const budgetMsg = plannedSteps > 0
+                ? `🎯 Budget: ${MAX_STEPS_PER_GOAL} iterations for "${currentStep.name}" (${plannedSteps} planned steps in the goal)`
+                : `🎯 Budget: ${MAX_STEPS_PER_GOAL} iterations for "${currentStep.name}"`;
+            console.log(budgetMsg);
+            redis.publish('reliqa-events', JSON.stringify({
+                runId: testRunId,
+                type: 'log',
+                message: budgetMsg,
+                timestamp: new Date()
+            }));
+            history.log(budgetMsg);
 
             // Give the agent a chance to break its own loop before killing the run
             const MAX_INTERVENTIONS = 3;
             let consecutiveInterventions = 0;
             let pendingIntervention: string | null = null;
+            let pendingRecovery: string | null = null;
 
             // --- CACHE CHECK ---
             const currentUrl = browser.page?.url() || url; // simple approximation
@@ -241,7 +270,9 @@ const worker = new Worker('test-queue', async (job: Job) => {
                     message: `📸 Capturing page state [Iteration ${stepLoopCount + 1}]...`,
                     timestamp: new Date()
                 }));
-                const screenshot = await browser.getScreenshot();
+                // One settled read, so the picture and the element list describe the
+                // same page version
+                const { screenshot, context: pageContext, quiescent } = await browser.captureState();
 
                 // Save screenshot for debugging
                 const screenshotDir = './artifacts/screenshots';
@@ -261,14 +292,21 @@ const worker = new Worker('test-queue', async (job: Job) => {
                 }));
 
 
-                const pageContext = await browser.getPageContext();
-
                 if (pageContext === null) {
                     // Without this the agent silently falls back to guessing selectors
                     redis.publish('reliqa-events', JSON.stringify({
                         runId: testRunId,
                         type: 'log',
                         message: `⚠️ DOM distiller failed. Running screenshot only for this iteration, selectors may be unreliable.`,
+                        timestamp: new Date()
+                    }));
+                }
+
+                if (!quiescent) {
+                    redis.publish('reliqa-events', JSON.stringify({
+                        runId: testRunId,
+                        type: 'log',
+                        message: `⚠️ Page never stopped changing within 3s. Context may be mid render.`,
                         timestamp: new Date()
                     }));
                 }
@@ -298,6 +336,11 @@ const worker = new Worker('test-queue', async (job: Job) => {
                         pendingIntervention = null;
                     }
 
+                    if (pendingRecovery) {
+                        optimizedHistory += `\n\n${pendingRecovery}`;
+                        pendingRecovery = null;
+                    }
+
                     // Get current DOM diff feedback
                     const domDiff = await browser.getDOMDiff();
 
@@ -305,7 +348,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
                     actions = response.actions;
                 }
 
-                stepActions.push(...actions); // Record actions
+                let recoveryRequested = false;
 
                 for (const action of actions) {
                     // Enhanced History Logging for Level 3 Intelligence
@@ -327,9 +370,43 @@ const worker = new Worker('test-queue', async (job: Job) => {
                         if (mode === 'chaos') {
                             throw new Error(`Chaos crash at step ${currentStep.name}: ${action.reason}`);
                         }
-                        throw new Error(`Failed at step ${currentStep.name}: ${action.reason}`);
+
+                        if (recovery.consider(currentStep.name) === 'accept') {
+                            throw new Error(`Failed at step ${currentStep.name} (confirmed after recovery sweep): ${action.reason}`);
+                        }
+
+                        const sweepMsg = `🩺 Recovery sweep: checking the whole page before accepting failure.`;
+                        redis.publish('reliqa-events', JSON.stringify({
+                            runId: testRunId,
+                            type: 'log',
+                            message: sweepMsg,
+                            timestamp: new Date()
+                        }));
+
+                        const sweep = await browser.sweepPage();
+                        pendingRecovery = recovery.buildPrompt(action.reason, sweep.inventory);
+                        history.log(`RECOVERY: fail requested because "${action.reason}". Swept ${sweep.positions} scroll positions.`);
+
+                        redis.publish('reliqa-events', JSON.stringify({
+                            runId: testRunId,
+                            type: 'log',
+                            message: `🩺 Swept ${sweep.positions} scroll positions. Asking again with the full page inventory.`,
+                            timestamp: new Date()
+                        }));
+
+                        recoveryRequested = true;
+                        break;
                     }
                 }
+
+                if (recoveryRequested) {
+                    // The sweep costs one iteration, and the failed batch must stay out
+                    // of the cache
+                    stepLoopCount++;
+                    continue;
+                }
+
+                stepActions.push(...actions); // Record actions
 
                 // Check for 'done' in the batch
                 const doneAction = actions.find(a => a.type === 'done');
@@ -347,10 +424,20 @@ const worker = new Worker('test-queue', async (job: Job) => {
                     break;
                 }
 
+                let actionNotes: string[] = [];
                 try {
-                    await browser.executeActions(actions);
+                    actionNotes = await browser.executeActions(actions);
                 } catch (e: any) { // Catch action failure and stop loop
                     throw new Error(`Action Execution Failed: ${e.message}`);
+                }
+
+                for (const actionNote of actionNotes) {
+                    redis.publish('reliqa-events', JSON.stringify({
+                        runId: testRunId,
+                        type: 'log',
+                        message: `⚠️ ${actionNote}`,
+                        timestamp: new Date()
+                    }));
                 }
 
                 // Wait for page to stabilize after action batch
@@ -365,8 +452,12 @@ const worker = new Worker('test-queue', async (job: Job) => {
                 const currentUrlObs = browser.page?.url() || '';
                 observer.recordState(currentUrlObs, actions[actions.length - 1], postActionDiff.hasChanges);
 
-                // Record the "batch" consequence
-                history.record(actions[actions.length - 1], postActionDiff.summary, i + 1);
+                // Record the "batch" consequence. Action notes tell the agent that a
+                // coordinate action missed, which "No changes detected" alone never does.
+                const batchOutcome = actionNotes.length
+                    ? `${postActionDiff.summary} | ${actionNotes.join('; ')}`
+                    : postActionDiff.summary;
+                history.record(actions[actions.length - 1], batchOutcome, i + 1);
 
                 // Check for stuck states
                 const intervention = observer.validateProgress();
@@ -410,7 +501,7 @@ const worker = new Worker('test-queue', async (job: Job) => {
             }
 
             if (!stepSuccess) {
-                throw new Error(`Timeout: Step ${currentStep.name} not completed within limit`);
+                throw new Error(`Timeout: Step ${currentStep.name} not completed within ${MAX_STEPS_PER_GOAL} iterations`);
             }
 
             // Validate step completion

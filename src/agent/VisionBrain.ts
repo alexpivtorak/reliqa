@@ -38,6 +38,20 @@ export class VisionBrain {
       - s: ready-to-use CSS selector for the test id (COPY THIS when present)
       - l: label/aria-label/placeholder
       - id: element id
+      - vp: 1 means the element is inside the viewport and visible in the screenshot
+      - vp: 0 means the element exists on the page but is scrolled out of view.
+            It has NO c coordinates. Act on it with its selector and the system
+            scrolls it into view for you.
+      - dy: how far out of view it is in pixels (negative = above, positive = below)
+      - meta: w/h viewport size, scrollY, scrollHeight, moreAbove, moreBelow,
+              offscreen (how many elements are out of view right now)
+      - page: state of the page as a whole
+        - url, title, headings: where you are
+        - alerts: visible validation errors, toasts and inline field errors
+        - rows / listItems: how many visible table rows and list items the main area has
+        - requiredEmpty: how many visible required fields are still blank
+        - emptyState: true when the main area says it has no items or no results
+        - digest: the first part of the main content text
       
       ${pageContext}
       
@@ -49,6 +63,26 @@ export class VisionBrain {
       
       IMPORTANT: Always prefer providing a robust CSS selector over coordinates. Coordinates should be used as a fallback because selectors are more resilient to layout shifts and page resizing.
       NEVER rewrite data-testid as data-test (or the reverse). Match the attribute name from "da" / "s".
+
+      VIEWPORT AND SCROLLING:
+      1. The screenshot only shows the viewport. The page continues below when meta.moreBelow is true.
+      2. NEVER click or type at a coordinate for an element you cannot see in the screenshot.
+         Use its selector instead, or scroll until you can see it.
+      3. If the field you need is missing from the screenshot but listed with vp 0,
+         act on its selector right away. Do not scroll first, the system handles that.
+      4. If a field is missing from the context entirely and meta.moreBelow or meta.moreAbove
+         is true, scroll once and look again before concluding it does not exist.
+
+      PAGE STATE:
+      1. Read page.alerts before repeating an action. A validation error explains why
+         nothing moved far better than guessing does.
+      2. page.emptyState true means the list, table or cart on screen holds no data.
+         A control that only exists once data exists is not a missing control. Go create
+         the data first, then come back to this step.
+      3. page.requiredEmpty above zero means required fields are still blank. Fill them
+         before submitting, unless you are deliberately testing validation.
+      4. page.rows and page.listItems tell you whether a list actually has content,
+         which the screenshot alone can hide below the fold.
       ` : '';
 
         // Add DOM diff info if available
@@ -105,9 +139,26 @@ ${contextSection}${diffSection}
 
       CRITICAL RULES:
       1. **INPUT HANDLING**: To type into a field, just return type="type" with the selector. You DO NOT need to click it first. The system handles focus.
-      2. **ANTI-LOOP**: If you tried an action and the Page Change Detection says "No changes detected", DO NOT try the exact same action again. Try a different selector or coordinate.
+      2. **ANTI-LOOP**: If the Page Change Detection says "No changes detected", change your
+         strategy, not your pixels. Nudging a coordinate by a few pixels counts as the same
+         action and is forbidden. Allowed next moves: use a CSS selector, scroll, wait, or
+         pick a different element.
       3. **SUCCESS**: If the visual state matches the goal, return type="done".
-      4. **FAILURE**: If you are stuck after 3 attempts, return type="fail".
+      4. **GENERATED IDS ROTATE**: Selectors in the goal that end in a long random token
+         (a ULID like 01KZ4CHAYW2Z1F53YF71CHB04V, a UUID, a hash, or a long number) were
+         captured during an earlier crawl. Apps reseed their data, so those exact ids
+         expire while the page itself is fine.
+         - If such a selector is missing but the page holds elements sharing its prefix,
+           for example [data-test="product-..."] with a different tail, act on the one
+           that fits the goal and write in your thought that you substituted it because
+           the id had rotated.
+         - Treat the goal's intent as "a product of this kind", not "this exact id".
+         - Only report a missing element of this kind when no element of the same family
+           exists anywhere on the page.
+      5. **FAILURE**: Only return type="fail" once you have scrolled through the page and
+         meta.moreBelow is false, or the element is genuinely absent from the page context.
+         A field you cannot see in the screenshot is not a missing field, and a rotated id
+         is not a missing element.
     `;
 
         return this.generateAction(prompt, screenshot, runId);

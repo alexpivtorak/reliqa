@@ -39,10 +39,10 @@ export function ChaosControlPanel({ onChange }: ChaosControlPanelProps) {
     return (
         <Card className="w-full mt-4 border-red-200 dark:border-red-900 bg-red-50/10">
             <CardHeader className="pb-3">
-                <CardTitle className="text-red-600 dark:text-red-400 flex items-center gap-2">
+                <CardTitle className="text-red-600 dark:text-red-400 flex items-center gap-2 text-base">
                     🔥 Chaos Configuration
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-sm">
                     Inject failures to test system resilience.
                 </CardDescription>
             </CardHeader>
@@ -94,12 +94,12 @@ export function ChaosControlPanel({ onChange }: ChaosControlPanelProps) {
                         </div>
 
                         {mode === 'hacker' && (
-                            <div className="p-3 bg-black/5 rounded text-xs border border-red-200 text-red-700">
+                            <div className="p-3 bg-black/5 rounded text-sm border border-red-200 text-red-700 dark:border-red-800 dark:text-red-300">
                                 ⚠️ <strong>Injection Active:</strong> The agent will attempt SQLi and XSS payloads in all input fields.
                             </div>
                         )}
                         {mode === 'gremlin' && (
-                            <div className="p-3 bg-black/5 rounded text-xs border border-orange-200 text-orange-700">
+                            <div className="p-3 bg-black/5 rounded text-sm border border-orange-200 text-orange-800 dark:border-orange-800 dark:text-orange-300">
                                 👾 <strong>Gremlin Active:</strong> The agent may rage-click elements and ignore standard wait times.
                             </div>
                         )}

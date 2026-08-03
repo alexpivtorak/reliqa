@@ -16,6 +16,16 @@ const DISTILL_SOURCE = fs.readFileSync(
     'utf8'
 );
 
+const QUIESCENCE_SOURCE = fs.readFileSync(
+    new URL('./browser/waitForQuiescence.js', import.meta.url),
+    'utf8'
+);
+
+const MUTATION_COUNTER_SOURCE = fs.readFileSync(
+    new URL('./browser/mutationCounter.js', import.meta.url),
+    'utf8'
+);
+
 // Interface for DOM state tracking
 interface DOMSnapshot {
     url: string;
@@ -25,6 +35,15 @@ interface DOMSnapshot {
     visibleText: string;  // First 500 chars of visible text
     formValues: Record<string, string>;  // Input values (redacted)
     timestamp: number;
+}
+
+/**
+ * A screenshot and an element context read from the same settled page state.
+ */
+export interface PageState {
+    screenshot: Buffer;
+    context: string | null;
+    quiescent: boolean;
 }
 
 interface DOMDiff {
@@ -72,6 +91,9 @@ export class BrowserController {
             },
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
         });
+
+        // Counts DOM mutations from the first byte, so early renders are visible too
+        await this.context.addInitScript(MUTATION_COUNTER_SOURCE);
 
         this.page = await this.context.newPage();
         // Enable better hydration/loading detection
@@ -242,22 +264,156 @@ export class BrowserController {
     async getPageContext(): Promise<string | null> {
         if (!this.page) throw new Error('Session not started');
 
-        try {
-            // Stabilize page before taking snapshot/context
-            await Promise.all([
-                this.page.waitForLoadState('load', { timeout: 3000 }).catch(() => {}),
-                this.page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {}),
-                this.page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {})
-            ]);
-            await this.page.waitForTimeout(300); // Wait for layouts/animations to settle
+        await this.waitForQuiescence();
+        return this.distill();
+    }
 
+    /**
+     * Reads the DOM as it is right now, without waiting.
+     * Returning null keeps the prompt honest. An empty object would tell the model
+     * that context exists but holds no elements, which makes it invent selectors.
+     */
+    private async distill(): Promise<string | null> {
+        if (!this.page) return null;
+
+        try {
             return await this.page.evaluate<string>(DISTILL_SOURCE);
         } catch (e) {
-            // Returning null keeps the prompt honest. An empty object would tell the model
-            // that context exists but holds no elements, which makes it invent selectors.
             console.error('Failed to distill DOM:', e);
             return null;
         }
+    }
+
+    private async ensureMutationCounter(): Promise<void> {
+        if (!this.page) return;
+        try {
+            await this.page.evaluate(MUTATION_COUNTER_SOURCE);
+        } catch { }
+    }
+
+    private async readMutationCount(): Promise<number> {
+        if (!this.page) return 0;
+        try {
+            return await this.page.evaluate(() => {
+                const count = (window as any).__reliqaMutations;
+                return typeof count === 'number' ? count : 0;
+            });
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * Waits until the DOM stops changing instead of waiting on load states, which
+     * single page apps resolve long before they have rendered anything.
+     */
+    async waitForQuiescence(): Promise<{ settled: boolean; mutations: number }> {
+        if (!this.page) return { settled: false, mutations: 0 };
+
+        await this.ensureMutationCounter();
+
+        try {
+            return await this.page.evaluate<{ settled: boolean; mutations: number }>(QUIESCENCE_SOURCE);
+        } catch {
+            return { settled: false, mutations: 0 };
+        }
+    }
+
+    /**
+     * Screenshot and element context taken from one settled state.
+     * Capturing them apart lets the model reason about a picture of one page version
+     * and a DOM of another, which reads to it as "the element does not exist".
+     */
+    async captureState(retries: number = 1): Promise<PageState> {
+        if (!this.page) throw new Error('Session not started');
+
+        const quiescence = await this.waitForQuiescence();
+        const mutationsBefore = await this.readMutationCount();
+        const screenshot = await this.getScreenshot();
+        const context = await this.distill();
+        const mutationsAfter = await this.readMutationCount();
+
+        if (mutationsAfter !== mutationsBefore && retries > 0) {
+            // Frameworks touch the DOM constantly, so a raw mutation count says almost
+            // nothing. Only pay for another capture when the state the agent reads
+            // actually differs.
+            const recheck = await this.distill();
+            if (recheck !== context) {
+                console.log(`Page state changed while capturing (${mutationsBefore} to ${mutationsAfter} mutations), capturing again`);
+                return this.captureState(retries - 1);
+            }
+        }
+
+        return { screenshot, context, quiescent: quiescence.settled };
+    }
+
+    private sweepKey(item: any): string {
+        return item.s || item.id || `${item.t}|${item.txt || ''}|${item.l || ''}`;
+    }
+
+    /**
+     * Coordinates only make sense at the scroll offset they were measured at, and the
+     * sweep restores the original offset when it finishes, so they are stripped here.
+     */
+    private toInventoryItem(item: any): any {
+        const entry: any = { t: item.t };
+        for (const key of ['txt', 'id', 'dt', 'da', 's', 'l', 'ty']) {
+            if (item[key] !== undefined) entry[key] = item[key];
+        }
+        return entry;
+    }
+
+    /**
+     * Walks the whole page one viewport at a time and merges everything it finds.
+     * Catches lazy loaded and virtualised content that a single read cannot see.
+     */
+    async sweepPage(maxPositions: number = 12): Promise<{ inventory: string; positions: number }> {
+        if (!this.page) throw new Error('Session not started');
+
+        const origin = await this.page.evaluate(() => window.scrollY);
+        await this.page.evaluate(() => window.scrollTo(0, 0));
+
+        const merged = new Map<string, any>();
+        let pageDigest: any = null;
+        let positions = 0;
+
+        while (positions < maxPositions) {
+            await this.waitForQuiescence();
+            const raw = await this.distill();
+            positions++;
+
+            let moreBelow = false;
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (parsed.page) pageDigest = parsed.page;
+                    for (const item of parsed.items || []) {
+                        merged.set(this.sweepKey(item), this.toInventoryItem(item));
+                    }
+                    moreBelow = Boolean(parsed.meta?.moreBelow);
+                } catch { }
+            }
+
+            if (!moreBelow) break;
+
+            const scrolled = await this.page.evaluate(() => {
+                const before = window.scrollY;
+                window.scrollBy(0, Math.round(window.innerHeight * 0.9));
+                return window.scrollY !== before;
+            });
+            if (!scrolled) break;
+        }
+
+        await this.page.evaluate((y) => window.scrollTo(0, y), origin);
+
+        return {
+            inventory: JSON.stringify({
+                items: [...merged.values()],
+                page: pageDigest,
+                meta: { sweep: true, positions, count: merged.size }
+            }),
+            positions
+        };
     }
 
     /**
@@ -705,10 +861,47 @@ export class BrowserController {
         }
     }
 
-    async executeActions(actions: Action | Action[]) {
+    /**
+     * Confirms that typed text actually reached an editable element.
+     * Coordinate typing hits whatever happens to be under the point, so without this
+     * check keystrokes can vanish and the only feedback is a vague "No changes detected".
+     */
+    private async verifyTypedText(text: string): Promise<string | null> {
+        if (!this.page) return null;
+
+        try {
+            const focus = await this.page.evaluate(() => {
+                const el = document.activeElement as HTMLInputElement | null;
+                if (!el || el === document.body) {
+                    return { tag: el ? el.tagName.toLowerCase() : 'none', editable: false, value: '' };
+                }
+
+                const tag = el.tagName.toLowerCase();
+                const editable = tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+                const value = typeof el.value === 'string' ? el.value : (el.textContent || '');
+                return { tag, editable, value };
+            });
+
+            if (!focus.editable) {
+                return `type landed nowhere: focus was on <${focus.tag}>, no field received the text`;
+            }
+
+            if (!focus.value.includes(text)) {
+                return `type may not have registered: <${focus.tag}> holds "${focus.value.slice(0, 40)}"`;
+            }
+        } catch { }
+
+        return null;
+    }
+
+    /**
+     * Runs a batch of actions and returns notes about anything that silently misfired.
+     */
+    async executeActions(actions: Action | Action[]): Promise<string[]> {
         if (!this.page) throw new Error('Session not started');
 
         const actionList = Array.isArray(actions) ? actions : [actions];
+        const notes: string[] = [];
 
         console.log(`Executing batch of ${actionList.length} actions...`);
 
@@ -717,17 +910,21 @@ export class BrowserController {
             console.log(`Executing action ${i + 1}/${actionList.length}: ${action.type}`, action);
 
             // Execute the single action logic
-            await this.executeSingleAction(action);
+            const note = await this.executeSingleAction(action);
+            if (note) notes.push(note);
 
             // Crucial safety delay between actions (except for the last one)
             if (i < actionList.length - 1) {
                 await this.page.waitForTimeout(500);
             }
         }
+
+        return notes;
     }
 
-    private async executeSingleAction(action: Action) {
+    private async executeSingleAction(action: Action): Promise<string | null> {
         console.log(`Executing action: ${action.type}`, action);
+        let note: string | null = null;
 
         try {
             switch (action.type) {
@@ -811,7 +1008,8 @@ export class BrowserController {
                                     await this.clickAtCoordinate(action.coordinate.x, action.coordinate.y);
                                     await this.page?.waitForTimeout(500); // Wait for focus
                                     await this.page?.keyboard.type(action.text);
-                                    typeSucceeded = true;
+                                    note = await this.verifyTypedText(action.text);
+                                    typeSucceeded = !note;
                                 } catch (coordErr) {
                                     console.warn(`Coordinate type fallback failed: ${coordErr}`);
                                 }
@@ -822,7 +1020,8 @@ export class BrowserController {
                             await this.clickAtCoordinate(action.coordinate.x, action.coordinate.y);
                             await this.page?.waitForTimeout(500); // Wait for focus
                             await this.page?.keyboard.type(action.text);
-                            typeSucceeded = true;
+                            note = await this.verifyTypedText(action.text);
+                            typeSucceeded = !note;
                         } catch (e) {
                             console.warn(`Type on coordinate failed: ${e}`);
                         }
@@ -919,6 +1118,9 @@ export class BrowserController {
             console.error(`Action failed: ${error}`);
             throw error;
         }
+
+        if (note) console.warn(`⚠️ ${note}`);
+        return note;
     }
 
     async closeSession(): Promise<string | null> {
