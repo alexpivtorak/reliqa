@@ -327,11 +327,12 @@ export class BrowserController {
                         if (dataTest) {
                             item.dt = dataTest;
                             item.da = 'data-test';
-                            item.s = `[data-test='${dataTest}']`;
+                            // Escape \${} so the outer TS template literal does not interpolate
+                            item.s = '[data-test=\'' + dataTest + '\']';
                         } else if (dataTestId) {
                             item.dt = dataTestId;
                             item.da = 'data-testid';
-                            item.s = `[data-testid='${dataTestId}']`;
+                            item.s = '[data-testid=\'' + dataTestId + '\']';
                         }
 
                         const label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name');

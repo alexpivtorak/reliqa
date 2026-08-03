@@ -38,6 +38,7 @@ import {
     Sparkles,
     Keyboard,
 } from "lucide-react";
+import { apiFetch, UnauthorizedError } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 interface StateNode {
@@ -496,12 +497,11 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
     const handleGenerateGoal = async () => {
         setIsGeneratingGoal(true);
         try {
-            const response = await fetch("/api/analyze-sitemap", {
+            const response = await apiFetch("/api/analyze-sitemap", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                credentials: "include",
                 body: JSON.stringify({
                     url,
                     nodes,
@@ -516,6 +516,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
             const data = await response.json();
             setGoal(data.prompt);
         } catch (error) {
+            if (error instanceof UnauthorizedError) return;
             console.error("Failed to generate goal prompt:", error);
             // Fallback mock logic if server is unreachable
             const selectedFlow = flows.find((f) => f.id === activeFlowId);
@@ -560,12 +561,11 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
         setIsLoading(true);
 
         try {
-            const response = await fetch("/api/jobs", {
+            const response = await apiFetch("/api/jobs", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                credentials: "include",
                 body: JSON.stringify({
                     url,
                     goal,
@@ -584,6 +584,7 @@ ${activeNodesList.length + 1}. Once all active nodes are successfully verified, 
             const data = await response.json();
             router.push(`/run/${data.runId}`);
         } catch (error) {
+            if (error instanceof UnauthorizedError) return;
             console.error(error);
             alert("Failed to start mission. Check server logs.");
             setIsLoading(false);

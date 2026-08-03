@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Run, getRuns } from '@/lib/api';
+import { Run, getRuns, UnauthorizedError } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ export function RunsList() {
             setRuns(prev => cursor ? [...prev, ...data.runs] : data.runs);
             setNextCursor(data.nextCursor);
         } catch (err) {
+            if (err instanceof UnauthorizedError) return;
             console.error("Failed to load missions", err);
             setError("Failed to load missions. Please try again.");
         } finally {

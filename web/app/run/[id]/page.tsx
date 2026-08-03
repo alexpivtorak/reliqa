@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { Run, Step, getRun, getStreamUrl, stopRun } from '@/lib/api';
+import { Run, Step, getRun, getStreamUrl, stopRun, apiFetch, UnauthorizedError } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -57,10 +57,9 @@ export default function RunPage() {
         if (!run) return;
         setIsRerunLoading(true);
         try {
-            const response = await fetch("/api/jobs", {
+            const response = await apiFetch("/api/jobs", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                credentials: "include",
                 body: JSON.stringify({
                     url: run.url,
                     goal: run.goal,
@@ -75,6 +74,7 @@ export default function RunPage() {
             setIsRerunOpen(false);
             router.push(`/run/${data.runId}`);
         } catch (error) {
+            if (error instanceof UnauthorizedError) return;
             console.error(error);
             alert("Failed to re-run mission.");
         } finally {
@@ -92,6 +92,7 @@ export default function RunPage() {
             await stopRun(id);
             // Status update will come via SSE
         } catch (error) {
+            if (error instanceof UnauthorizedError) return;
             console.error(error);
             alert("Failed to stop mission.");
         } finally {
@@ -119,7 +120,10 @@ export default function RunPage() {
                     console.error('Failed to parse logs:', e);
                 }
             }
-        }).catch(err => console.error(err));
+        }).catch(err => {
+            if (err instanceof UnauthorizedError) return;
+            console.error(err);
+        });
     }, [id]);
 
     // SSE Connection for live logs, steps, frames, and status
