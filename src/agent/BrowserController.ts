@@ -321,8 +321,18 @@ export class BrowserController {
 
                         if (el.id) item.id = el.id;
 
-                        const testId = el.getAttribute('data-test') || el.getAttribute('data-testid');
-                        if (testId) item.dt = testId;
+                        // Keep the real attribute name so crawlers and the LLM emit working selectors
+                        const dataTest = el.getAttribute('data-test');
+                        const dataTestId = el.getAttribute('data-testid');
+                        if (dataTest) {
+                            item.dt = dataTest;
+                            item.da = 'data-test';
+                            item.s = `[data-test='${dataTest}']`;
+                        } else if (dataTestId) {
+                            item.dt = dataTestId;
+                            item.da = 'data-testid';
+                            item.s = `[data-testid='${dataTestId}']`;
+                        }
 
                         const label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name');
                         if (label) item.l = label; // l = label/name/placeholder

@@ -113,7 +113,13 @@ export class DiscoveryCrawler {
                 try {
                     const parsedContext = JSON.parse(contextStr);
                     interactives = (parsedContext.items || [])
-                        .map((el: any) => el.dt ? `[data-test='${el.dt}']` : (el.id ? `#${el.id}` : el.t))
+                        .map((el: any) => {
+                            if (el.s) return el.s;
+                            if (el.dt && el.da) return `[${el.da}='${el.dt}']`;
+                            if (el.id) return `#${el.id}`;
+                            return el.t;
+                        })
+                        .filter(Boolean)
                         .slice(0, 5); // limit to top 5 selectors
                 } catch {}
 

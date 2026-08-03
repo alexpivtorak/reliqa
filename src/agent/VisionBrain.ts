@@ -33,18 +33,22 @@ export class VisionBrain {
       - t: tag name (btn=button, inp=input, etc.)
       - c: [x, y] center coordinates (USE THESE for precise clicking)
       - txt: visible text or value
-      - dt: data-test or data-testid
+      - dt: test id value
+      - da: which attribute holds it ("data-test" or "data-testid") — use this exact attribute name
+      - s: ready-to-use CSS selector for the test id (COPY THIS when present)
       - l: label/aria-label/placeholder
       - id: element id
       
       ${pageContext}
       
       SELECTOR PRIORITY:
-      1. data-test/id/name: [data-test='value'], #id, [name='value'] (Highly reliable, use whenever available)
-      2. Text/Label/ARIA: button:has-text('Login'), [aria-label='Search']
-      3. Coordinate: { "coordinate": { "x": 123, "y": 456 } } (Use 'c' values from context ONLY as a fallback if no good CSS selector is available, e.g., in Shadow DOM or custom canvases)
+      1. Prefer field "s" from page context when present (already uses the correct data-test vs data-testid attribute)
+      2. Otherwise id/name: #id, [name='value']
+      3. Text/Label/ARIA: button:has-text('Login'), [aria-label='Search']
+      4. Coordinate: { "coordinate": { "x": 123, "y": 456 } } (Use 'c' values from context ONLY as a fallback if no good CSS selector is available, e.g., in Shadow DOM or custom canvases)
       
       IMPORTANT: Always prefer providing a robust CSS selector over coordinates. Coordinates should be used as a fallback because selectors are more resilient to layout shifts and page resizing.
+      NEVER rewrite data-testid as data-test (or the reverse). Match the attribute name from "da" / "s".
       ` : '';
 
         // Add DOM diff info if available
@@ -91,8 +95,10 @@ ${contextSection}${diffSection}
       }
 
       SELECTOR PRIORITY RULES:
-      1. **ROBUST SELECTORS**: Always prefer 'id', 'data-test', 'data-testid', 'name' attributes.
-         - Example: "selector": "[data-test='submit-btn']"
+      1. **ROBUST SELECTORS**: Prefer page-context "s", then 'id', 'name', or the exact test-id attribute from "da".
+         - Example with data-testid: "selector": "[data-testid='sign-in-email']"
+         - Example with data-test: "selector": "[data-test='submit-btn']"
+         - Do not invent data-test when the context shows data-testid (and vice versa).
       2. **TEXT/ARIA**: If no robust ID, use text content or aria-label.
          - Example: "selector": "button:has-text('Login')"
       3. **COORDINATES**: Use coordinates ONLY as a fallback if the element has no good selector or is inside a Shadow DOM/Canvas.
