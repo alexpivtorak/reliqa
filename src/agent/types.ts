@@ -1,8 +1,9 @@
-export type ActionType = 'click' | 'type' | 'scroll' | 'wait' | 'navigate' | 'hover' | 'keypress' | 'rage_click' | 'done' | 'fail';
+export type ActionType = 'click' | 'type' | 'select' | 'scroll' | 'wait' | 'navigate' | 'hover' | 'keypress' | 'rage_click' | 'done' | 'fail';
 
 export interface Action {
     type: ActionType;
     selector?: string;
+    // For type: the text to enter. For select: the option value or visible label.
     text?: string;
     coordinate?: { x: number; y: number };
     duration?: number;

@@ -40,8 +40,8 @@ export class Optimizer {
                 // Since this optimizer is run on the *batch* before caching, and cache is per-step, 
                 // it's statistically likely to be a panic loop if it's identical.
 
-                // For 'type' actions: Always dedupe (keep the last one which likely succeeded)
-                if (current.type === 'type') {
+                // For 'type' and 'select' actions: Always dedupe (keep the last one which likely succeeded)
+                if (current.type === 'type' || current.type === 'select') {
                     droppedCount++;
                     continue;
                 }
@@ -67,7 +67,7 @@ export class Optimizer {
         if (a.type !== b.type) return false;
 
         // Compare relevant fields based on type
-        if (a.type === 'type') {
+        if (a.type === 'type' || a.type === 'select') {
             return a.selector === b.selector && a.text === b.text;
         }
 

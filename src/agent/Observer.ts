@@ -52,9 +52,9 @@ export class Observer {
         const previous = progressActions[progressActions.length - 2];
         const twoBefore = progressActions[progressActions.length - 3];
 
-        // Check if we're filling a form (multiple 'type' actions on same page)
+        // Check if we're filling a form (multiple 'type'/'select' actions on same page)
         const recentTypes = progressActions.slice(-5).filter(
-            s => s.lastAction?.type === 'type'
+            s => s.lastAction?.type === 'type' || s.lastAction?.type === 'select'
         ).length;
 
         const isFillingForm = recentTypes >= 3 && current.url === previous.url;

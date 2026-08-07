@@ -8,7 +8,7 @@
     const MAX_TEXT_LENGTH = 50;
     const MAX_OFFSCREEN_TEXT_LENGTH = 24;
     const INTERACTIVE_TAGS = ['input', 'textarea', 'select', 'button', 'a'];
-    const INTERACTIVE_ROLES = ['button', 'link', 'checkbox', 'menuitem', 'tab', 'switch', 'radio'];
+    const INTERACTIVE_ROLES = ['button', 'link', 'checkbox', 'menuitem', 'tab', 'switch', 'radio', 'combobox', 'listbox', 'option'];
     const TEST_ID_ATTRIBUTES = ['data-test', 'data-testid', 'data-test-id', 'data-qa'];
     const FORM_TAGS = ['input', 'textarea', 'select'];
     const MAX_HEADINGS = 5;
@@ -16,6 +16,8 @@
     const HEADING_TEXT_LENGTH = 60;
     const ALERT_TEXT_LENGTH = 120;
     const DIGEST_LENGTH = 300;
+    const MAX_OPTIONS = 60;
+    const MAX_OPTION_TEXT = 40;
     const ALERT_SELECTOR = '[role="alert"],[aria-live],.alert,.toast,.error,.invalid-feedback,.help-block';
     const EMPTY_STATE_PATTERN = /(is empty|are empty|no items|no results|no products|nothing found|nothing here|0 results)/i;
 
@@ -131,6 +133,8 @@
 
         if (el.type) item.ty = el.type;
 
+        attachWidgetFields(item, el);
+
         return item;
     }
 
@@ -145,6 +149,92 @@
 
     function collapse(text) {
         return (text || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function trimOptionText(text) {
+        const collapsed = collapse(text);
+        return collapsed.length > MAX_OPTION_TEXT
+            ? collapsed.slice(0, MAX_OPTION_TEXT)
+            : collapsed;
+    }
+
+    function collectNativeOptions(el) {
+        const all = [];
+        for (const opt of el.options || []) {
+            all.push({
+                v: opt.value,
+                txt: trimOptionText(opt.text || opt.label || opt.value || '')
+            });
+        }
+        const result = { optN: all.length };
+        if (all.length > 0) {
+            result.opts = all.slice(0, MAX_OPTIONS);
+        }
+        return result;
+    }
+
+    function findOwnedList(el) {
+        const ownedId = el.getAttribute('aria-controls') || el.getAttribute('aria-owns');
+        if (!ownedId) return null;
+        return document.getElementById(ownedId);
+    }
+
+    function collectAriaOptions(listRoot) {
+        if (!listRoot) return null;
+        const optionEls = listRoot.querySelectorAll('[role="option"],[role="menuitem"],option');
+        const all = [];
+        for (const opt of optionEls) {
+            const text = trimOptionText(opt.getAttribute('aria-label') || opt.textContent || '');
+            if (!text) continue;
+            const entry = { txt: text };
+            const value = opt.getAttribute('data-value') || opt.getAttribute('value');
+            if (value) entry.v = value;
+            all.push(entry);
+        }
+        if (all.length === 0) return null;
+        return {
+            optN: all.length,
+            opts: all.slice(0, MAX_OPTIONS)
+        };
+    }
+
+    function attachWidgetFields(item, el) {
+        const tag = el.tagName.toLowerCase();
+        const role = (el.getAttribute('role') || '').toLowerCase();
+
+        if (tag === 'select') {
+            item.wk = 'select';
+            item.val = el.value || '';
+            const options = collectNativeOptions(el);
+            item.optN = options.optN;
+            if (options.opts) item.opts = options.opts;
+            return;
+        }
+
+        if (role === 'combobox' || (tag === 'input' && role === 'combobox')) {
+            item.wk = 'combobox';
+            const expanded = el.getAttribute('aria-expanded');
+            if (expanded !== null) item.exp = expanded === 'true' ? 1 : 0;
+            if (typeof el.value === 'string' && el.value) item.val = el.value;
+            // Closed comboboxes have no options in the DOM. Only report opts when open.
+            if (expanded === 'true') {
+                const owned = collectAriaOptions(findOwnedList(el));
+                if (owned) {
+                    item.optN = owned.optN;
+                    item.opts = owned.opts;
+                }
+            }
+            return;
+        }
+
+        if (role === 'listbox') {
+            item.wk = 'listbox';
+            const owned = collectAriaOptions(el);
+            if (owned) {
+                item.optN = owned.optN;
+                item.opts = owned.opts;
+            }
+        }
     }
 
     function visibleTextOf(el, limit) {

@@ -269,12 +269,22 @@ app.post('/api/jobs', requireAuth, async (c) => {
 
     console.log(`Triggering Job: ${goal} on ${safeUrl} [${mode}] using ${model || 'default'}`);
 
+    const normalizedMode = mode === 'chaos' ? 'chaos' : 'standard';
+    const normalizedHeadless = headless !== false;
+    const normalizedDisableCache = disableCache === true;
+    const normalizedChaosProfile = normalizedMode === 'chaos' ? (chaosProfile ?? null) : null;
+    const normalizedModel = model || 'gemini-2.5-flash';
+
     const [testRun] = await db.insert(testRuns).values({
         userId,
         url: safeUrl,
         goal: goal,
         status: 'queued',
-        model: model || 'gemini-2.5-flash'
+        model: normalizedModel,
+        mode: normalizedMode,
+        chaosProfile: normalizedChaosProfile,
+        headless: normalizedHeadless,
+        disableCache: normalizedDisableCache,
     }).returning();
 
     rememberRunOwner(testRun.id, userId);
@@ -286,11 +296,11 @@ app.post('/api/jobs', requireAuth, async (c) => {
         goal,
         testRunId: testRun.id,
         userId,
-        mode,
-        chaosProfile,
-        model: model || 'gemini-2.5-flash',
-        headless: headless !== false,
-        disableCache: disableCache === true
+        mode: normalizedMode,
+        chaosProfile: normalizedChaosProfile,
+        model: normalizedModel,
+        headless: normalizedHeadless,
+        disableCache: normalizedDisableCache,
     });
 
     await queue.close();

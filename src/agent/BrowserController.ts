@@ -4,6 +4,16 @@ import fs from 'fs';
 import { Action, ActionType } from './types.js';
 import { Redis } from 'ioredis';
 import { ChaosController } from './ChaosController.js';
+import {
+    resolveWidgetKindInPage,
+    readTriggerState,
+    readTagAndRole,
+    matchNativeOptions,
+    labelMatchesSelected,
+    findAriaOptionMatch,
+    clickAriaOption,
+    pageHoldsChoice,
+} from './browser/selectHelpers.js';
 
 // Redis Publisher for events
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
@@ -357,7 +367,7 @@ export class BrowserController {
      */
     private toInventoryItem(item: any): any {
         const entry: any = { t: item.t };
-        for (const key of ['txt', 'id', 'dt', 'da', 's', 'l', 'ty']) {
+        for (const key of ['txt', 'id', 'dt', 'da', 's', 'l', 'ty', 'wk', 'val', 'opts', 'optN', 'exp']) {
             if (item[key] !== undefined) entry[key] = item[key];
         }
         return entry;
@@ -894,6 +904,232 @@ export class BrowserController {
         return null;
     }
 
+    private normalizeOptionText(value: string): string {
+        return value.replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    /**
+     * Reads whether a selector points at a native select, an ARIA combobox, or a listbox.
+     */
+    async resolveWidgetKind(selector: string): Promise<'select' | 'combobox' | 'listbox' | 'unknown'> {
+        if (!this.page) return 'unknown';
+
+        const escapedSelector = this.escapeSelector(selector);
+        try {
+            return await this.page.locator(escapedSelector).first().evaluate(resolveWidgetKindInPage);
+        } catch {
+            return 'unknown';
+        }
+    }
+
+    /**
+     * Picks an option on a native <select> via Playwright selectOption.
+     * Tries value first, then label, then a normalized case-insensitive label match.
+     */
+    async selectNativeOption(selector: string, wanted: string): Promise<string | null> {
+        if (!this.page) return 'select failed: no page';
+
+        const escapedSelector = this.escapeSelector(selector);
+        const locator = this.page.locator(escapedSelector).first();
+
+        try {
+            await locator.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+        } catch { }
+
+        // Value match
+        try {
+            await locator.selectOption({ value: wanted }, { timeout: 3000 });
+            const value = await locator.inputValue({ timeout: 1000 });
+            if (value === wanted) {
+                console.log(`✓ Selected value "${wanted}" on ${selector}`);
+                return null;
+            }
+        } catch { }
+
+        // Exact label match
+        try {
+            await locator.selectOption({ label: wanted }, { timeout: 3000 });
+            const value = await locator.inputValue({ timeout: 1000 });
+            const matched = await locator.evaluate(labelMatchesSelected, wanted);
+            if (matched || value === wanted) {
+                console.log(`✓ Selected label "${wanted}" on ${selector}`);
+                return null;
+            }
+        } catch { }
+
+        // Normalized case-insensitive label match against real options
+        try {
+            const resolved = await locator.evaluate(matchNativeOptions, wanted);
+
+            if (resolved.match) {
+                await locator.selectOption({ value: resolved.match.value }, { timeout: 3000 });
+                const value = await locator.inputValue({ timeout: 1000 });
+                if (value === resolved.match.value) {
+                    console.log(`✓ Selected normalized match "${resolved.match.label}" (${resolved.match.value}) on ${selector}`);
+                    return null;
+                }
+            }
+
+            const hint = resolved.closest.length
+                ? ` Closest labels: ${resolved.closest.join(', ')}`
+                : '';
+            return `select failed: no option matched "${wanted}" on ${selector}.${hint}`;
+        } catch (e) {
+            return `select failed on ${selector}: ${e}`;
+        }
+    }
+
+    /**
+     * Opens an ARIA combobox or listbox wrapper and clicks the matching option.
+     * For typeahead input comboboxes, types the wanted text before waiting for options.
+     */
+    async chooseAriaOption(selector: string, wanted: string): Promise<string | null> {
+        if (!this.page) return 'select failed: no page';
+
+        const escapedSelector = this.escapeSelector(selector);
+        const trigger = this.page.locator(escapedSelector).first();
+
+        let beforeState = '';
+        try {
+            beforeState = await trigger.evaluate(readTriggerState);
+        } catch { }
+
+        const tagAndRole = await trigger.evaluate(readTagAndRole)
+            .catch(() => ({ tag: '', role: '', expanded: null as string | null, controls: '' }));
+
+        const isTypeahead = tagAndRole.tag === 'input' && tagAndRole.role === 'combobox';
+
+        try {
+            await trigger.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+            await trigger.click({ timeout: 5000 });
+            await this.page.waitForTimeout(300);
+        } catch (e) {
+            return `select failed: could not open ${selector}: ${e}`;
+        }
+
+        if (isTypeahead) {
+            try {
+                await trigger.fill(wanted, { timeout: 3000 });
+                await this.page.waitForTimeout(400);
+            } catch {
+                try {
+                    await this.page.keyboard.type(wanted);
+                    await this.page.waitForTimeout(400);
+                } catch { }
+            }
+        }
+
+        // Wait for options to appear, preferably inside the owned list
+        const optionSelectors = [
+            tagAndRole.controls ? `#${tagAndRole.controls} [role="option"]` : '',
+            tagAndRole.controls ? `#${tagAndRole.controls} [role="menuitem"]` : '',
+            '[role="listbox"] [role="option"]',
+            '[role="listbox"] [role="menuitem"]',
+            '[role="option"]',
+            '[role="menuitem"]',
+            '[data-test^="lang-"]',
+        ].filter(Boolean);
+
+        let optionsVisible = false;
+        for (const optSel of optionSelectors) {
+            try {
+                await this.page.locator(optSel).first().waitFor({ state: 'visible', timeout: 2500 });
+                optionsVisible = true;
+                break;
+            } catch { }
+        }
+
+        if (!optionsVisible) {
+            return `select failed: opened ${selector} but no options appeared for "${wanted}"`;
+        }
+
+        const needle = this.normalizeOptionText(wanted);
+
+        // Gather visible options and pick the best match
+        const matchResult = await this.page.evaluate(findAriaOptionMatch, wanted);
+
+        if (matchResult.index < 0) {
+            const hint = matchResult.closest.length
+                ? ` Closest labels: ${matchResult.closest.join(', ')}`
+                : '';
+            // Close the open menu so the next attempt starts clean
+            await this.page.keyboard.press('Escape').catch(() => {});
+            return `select failed: no option matched "${wanted}" on ${selector}.${hint}`;
+        }
+
+        try {
+            const optionNodes = this.page.locator(
+                '[role="option"],[role="menuitem"],[data-test^="lang-"]'
+            );
+            const clicked = await this.page.evaluate(clickAriaOption, {
+                text: matchResult.text || wanted,
+                testId: matchResult.testId || ''
+            });
+
+            if (!clicked) {
+                await optionNodes.filter({ hasText: matchResult.text || wanted }).first()
+                    .click({ timeout: 3000 });
+            }
+            await this.page.waitForTimeout(800);
+        } catch (e) {
+            return `select failed: could not click option "${wanted}" on ${selector}: ${e}`;
+        }
+
+        // Verify the trigger changed
+        try {
+            const afterState = await trigger.evaluate(readTriggerState);
+
+            const changed =
+                afterState !== beforeState ||
+                this.normalizeOptionText(afterState).includes(needle) ||
+                this.normalizeOptionText(afterState) === needle;
+
+            if (!changed) {
+                // Some widgets update a sibling label rather than the trigger itself
+                const holdsChoice = await this.page.evaluate(pageHoldsChoice, wanted).catch(() => false);
+
+                if (!holdsChoice) {
+                    return `select may not have registered: ${selector} still shows "${afterState.slice(0, 40)}" after choosing "${wanted}"`;
+                }
+            }
+
+            console.log(`✓ Chose ARIA option "${wanted}" on ${selector}`);
+            return null;
+        } catch {
+            console.log(`✓ Chose ARIA option "${wanted}" on ${selector} (verify skipped)`);
+            return null;
+        }
+    }
+
+    /**
+     * Routes a select action to the right widget mechanic.
+     * No coordinate fallback and no synthetic value assignment.
+     */
+    async selectWithRetry(selector: string, wanted: string): Promise<string | null> {
+        if (!this.page) return 'select failed: no page';
+        if (!wanted) return 'select failed: no option text provided';
+
+        const kind = await this.resolveWidgetKind(selector);
+        console.log(`Select on ${selector} resolved as ${kind}`);
+
+        if (kind === 'select') {
+            return this.selectNativeOption(selector, wanted);
+        }
+
+        if (kind === 'combobox' || kind === 'listbox') {
+            return this.chooseAriaOption(selector, wanted);
+        }
+
+        // Unknown widgets: try native first, then ARIA open-and-pick
+        const nativeNote = await this.selectNativeOption(selector, wanted);
+        if (!nativeNote) return null;
+
+        const ariaNote = await this.chooseAriaOption(selector, wanted);
+        if (!ariaNote) return null;
+
+        return `select failed: ${selector} is not a known select/combobox. Native: ${nativeNote}. ARIA: ${ariaNote}`;
+    }
+
     /**
      * Runs a batch of actions and returns notes about anything that silently misfired.
      */
@@ -1042,6 +1278,19 @@ export class BrowserController {
 
                     // Give the UI a tiny moment to react to the blur/change event
                     await this.page?.waitForTimeout(100);
+                    break;
+
+                case 'select':
+                    if (!action.selector) {
+                        note = 'select failed: no selector provided';
+                        break;
+                    }
+                    if (!action.text) {
+                        note = 'select failed: no option text provided';
+                        break;
+                    }
+                    note = await this.selectWithRetry(action.selector, action.text);
+                    await this.page?.waitForTimeout(200);
                     break;
 
                 case 'keypress':

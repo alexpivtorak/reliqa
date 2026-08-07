@@ -1,4 +1,12 @@
 
+export interface ChaosProfile {
+    name: 'standard' | 'gremlin' | 'hacker';
+    latency?: { min: number; max: number; chance: number };
+    packetLoss?: number;
+    injection?: boolean;
+    rageClick?: boolean;
+}
+
 export interface Run {
     id: number;
     url: string;
@@ -9,6 +17,10 @@ export interface Run {
     createdAt: string;
     logs?: string;
     model?: string;
+    mode?: 'standard' | 'chaos' | string | null;
+    chaosProfile?: ChaosProfile | null;
+    headless?: boolean | null;
+    disableCache?: boolean | null;
 }
 
 export interface Step {

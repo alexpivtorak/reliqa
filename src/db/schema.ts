@@ -94,6 +94,10 @@ export const testRuns = pgTable('test_runs', {
     startTime: timestamp('start_time'),
     endTime: timestamp('end_time'),
     model: text('model'),
+    mode: text('mode').default('standard'),
+    chaosProfile: jsonb('chaos_profile'),
+    headless: boolean('headless').default(true),
+    disableCache: boolean('disable_cache').default(false),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });

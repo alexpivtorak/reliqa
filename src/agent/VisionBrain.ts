@@ -38,6 +38,11 @@ export class VisionBrain {
       - s: ready-to-use CSS selector for the test id (COPY THIS when present)
       - l: label/aria-label/placeholder
       - id: element id
+      - wk: widget kind for dropdowns — "select" (native), "combobox", or "listbox"
+      - val: current value of a select or combobox (empty string means blank)
+      - opts: [{ v, txt }] available options when known (v=value, txt=label). Cap applies on long lists.
+      - optN: total option count (may be larger than opts.length when truncated)
+      - exp: 1 when a combobox is expanded, 0 when collapsed. Closed comboboxes omit opts.
       - vp: 1 means the element is inside the viewport and visible in the screenshot
       - vp: 0 means the element exists on the page but is scrolled out of view.
             It has NO c coordinates. Act on it with its selector and the system
@@ -63,6 +68,15 @@ export class VisionBrain {
       
       IMPORTANT: Always prefer providing a robust CSS selector over coordinates. Coordinates should be used as a fallback because selectors are more resilient to layout shifts and page resizing.
       NEVER rewrite data-testid as data-test (or the reverse). Match the attribute name from "da" / "s".
+
+      DROPDOWNS AND SELECTS:
+      1. NEVER click an element whose wk is "select". A native select opens a browser popup
+         with nothing in the DOM. Use type="select" with the option value or label in "text".
+      2. Prefer a value or label from opts. When optN is larger than opts.length the list
+         was truncated, but the system still resolves exact and normalized matches.
+      3. For wk "combobox" with no opts, still use type="select" with the label you want.
+         The system opens the widget and picks the matching option for you.
+      4. Do not use type="type" on a native select.
 
       VIEWPORT AND SCROLLING:
       1. The screenshot only shows the viewport. The page continues below when meta.moreBelow is true.
@@ -119,11 +133,11 @@ ${contextSection}${diffSection}
       {
         "thought": "I see a login form. The previous action clicked the 'Sign In' link. Now I need to enter the username. I see an input with id='email'.",
         "action": {
-            "type": "click" | "type" | "keypress" | "scroll" | "hover" | "wait" | "navigate" | "done" | "fail",
+            "type": "click" | "type" | "select" | "keypress" | "scroll" | "hover" | "wait" | "navigate" | "done" | "fail",
             "reason": "short explanation for logs",
             "selector": "css selector (PREFER THIS)",
             "coordinate": { "x": 123, "y": 456 } (BACKUP if selector fails),
-            "text": "text to type" (for 'type' action),
+            "text": "text to type, or option value/label for select",
             "key": "Enter" | "Escape" | "Tab" (for 'keypress' action)
         }
       }
@@ -139,12 +153,15 @@ ${contextSection}${diffSection}
 
       CRITICAL RULES:
       1. **INPUT HANDLING**: To type into a field, just return type="type" with the selector. You DO NOT need to click it first. The system handles focus.
-      2. **ANTI-LOOP**: If the Page Change Detection says "No changes detected", change your
+      2. **SELECT HANDLING**: To pick a dropdown option, return type="select" with the selector and
+         text set to the option value or visible label. NEVER click a native select (wk="select").
+         Prefer a value from opts when present.
+      3. **ANTI-LOOP**: If the Page Change Detection says "No changes detected", change your
          strategy, not your pixels. Nudging a coordinate by a few pixels counts as the same
          action and is forbidden. Allowed next moves: use a CSS selector, scroll, wait, or
          pick a different element.
-      3. **SUCCESS**: If the visual state matches the goal, return type="done".
-      4. **GENERATED IDS ROTATE**: Selectors in the goal that end in a long random token
+      4. **SUCCESS**: If the visual state matches the goal, return type="done".
+      5. **GENERATED IDS ROTATE**: Selectors in the goal that end in a long random token
          (a ULID like 01KZ4CHAYW2Z1F53YF71CHB04V, a UUID, a hash, or a long number) were
          captured during an earlier crawl. Apps reseed their data, so those exact ids
          expire while the page itself is fine.
@@ -155,7 +172,7 @@ ${contextSection}${diffSection}
          - Treat the goal's intent as "a product of this kind", not "this exact id".
          - Only report a missing element of this kind when no element of the same family
            exists anywhere on the page.
-      5. **FAILURE**: Only return type="fail" once you have scrolled through the page and
+      6. **FAILURE**: Only return type="fail" once you have scrolled through the page and
          meta.moreBelow is false, or the element is genuinely absent from the page context.
          A field you cannot see in the screenshot is not a missing field, and a rotated id
          is not a missing element.
@@ -183,11 +200,11 @@ ${contextSection}${diffSection}
         "thought": "I will try to inject SQL into the username field",
         "actions": [
             {
-                "type": "click" | "rage_click" | "type" | "scroll" | "wait" | "navigate" | "done" | "fail",
+                "type": "click" | "rage_click" | "type" | "select" | "scroll" | "wait" | "navigate" | "done" | "fail",
                 "reason": "short explanation of the chaos strategy",
                 "selector": "css selector (optional)",
                 "coordinate": { "x": 123, "y": 456 } (optional),
-                "text": "text to type" (optional)
+                "text": "text to type, or option value/label for select" (optional)
             }
         ]
       }

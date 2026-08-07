@@ -2,30 +2,23 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { Run, Step, getRun, getStreamUrl, stopRun, apiFetch, UnauthorizedError } from '@/lib/api';
+import { Run, Step, getRun, getStreamUrl, stopRun, UnauthorizedError } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ExternalLink, Terminal, Camera, Zap, Video, Square, Copy, Check } from 'lucide-react';
 import { VideoPlayer } from '@/components/video-player';
+import { MissionForm } from '@/components/mission-form';
 
 import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 
@@ -48,39 +41,7 @@ export default function RunPage() {
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Re-run state
     const [isRerunOpen, setIsRerunOpen] = useState(false);
-    const [rerunModel, setRerunModel] = useState("gemini-2.5-flash");
-    const [isRerunLoading, setIsRerunLoading] = useState(false);
-
-    const handleRerun = async () => {
-        if (!run) return;
-        setIsRerunLoading(true);
-        try {
-            const response = await apiFetch("/api/jobs", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    url: run.url,
-                    goal: run.goal,
-                    // Assume standard mode for simplicity or fetch mode if available in Run object
-                    mode: "standard",
-                    model: rerunModel
-                }),
-            });
-
-            if (!response.ok) throw new Error("Failed to start re-run");
-            const data = await response.json();
-            setIsRerunOpen(false);
-            router.push(`/run/${data.runId}`);
-        } catch (error) {
-            if (error instanceof UnauthorizedError) return;
-            console.error(error);
-            alert("Failed to re-run mission.");
-        } finally {
-            setIsRerunLoading(false);
-        }
-    };
 
     const [isStopping, setIsStopping] = useState(false);
     const handleStop = async () => {
@@ -251,34 +212,30 @@ export default function RunPage() {
                                 <Zap className="w-4 h-4" /> Re-run Mission
                             </Button>
                         </DialogTrigger>
-                        <DialogContent>
+                        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
                                 <DialogTitle>Re-run Mission #{run.id}</DialogTitle>
                                 <DialogDescription>
-                                    Start a new run with the same goal and URL, but you can change the model.
+                                    Settings are copied from this run. Change anything you need, then launch again.
                                 </DialogDescription>
                             </DialogHeader>
-                            <div className="grid gap-4 py-4">
-                                <div className="space-y-2">
-                                    <label htmlFor="model" className="text-sm font-medium">Select Model</label>
-                                    <Select value={rerunModel} onValueChange={setRerunModel}>
-                                        <SelectTrigger id="model">
-                                            <SelectValue placeholder="Select Model" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="gemini-2.5-flash">⚡ Gemini 2.5 Flash (Recommended)</SelectItem>
-                                            <SelectItem value="gemini-3.6-flash">🚀 Gemini 3.6 Flash (Newest)</SelectItem>
-                                            <SelectItem value="gemini-2.5-pro">🧠 Gemini 2.5 Pro (High Reasoning)</SelectItem>
-                                            <SelectItem value="gemini-2.5-flash-lite">🏎️ Gemini 2.5 Flash Lite (Fastest)</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-                            <DialogFooter>
-                                <Button onClick={handleRerun} disabled={isRerunLoading}>
-                                    {isRerunLoading ? "Starting..." : "🚀 Start Re-run"}
-                                </Button>
-                            </DialogFooter>
+                            <MissionForm
+                                key={run.id}
+                                initialValues={{
+                                    url: run.url,
+                                    goal: run.goal,
+                                    model: run.model ?? "gemini-2.5-flash",
+                                    isChaos: run.mode === "chaos",
+                                    chaosProfile: run.chaosProfile ?? null,
+                                    headless: run.headless ?? true,
+                                    disableCache: run.disableCache ?? false,
+                                }}
+                                submitLabel="🚀 Start Re-run"
+                                onLaunched={(runId) => {
+                                    setIsRerunOpen(false);
+                                    router.push(`/run/${runId}`);
+                                }}
+                            />
                         </DialogContent>
                     </Dialog>
                 </div>
